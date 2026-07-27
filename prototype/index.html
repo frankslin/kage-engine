@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>拼字法造字工具</title>
+<script src="../2d.js"></script>
+<script src="../buhin.js"></script>
+<script src="../curve.js"></script>
+<script src="../kage.js"></script>
+<script src="../kagecd.js"></script>
+<script src="../kagedf.js"></script>
+<script src="../polygon.js"></script>
+<script src="../polygons.js"></script>
+<script src="components.js"></script>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "PingFang TC", "Hiragino Sans", "Noto Sans TC", sans-serif;
+    background: #f4f1ea; color: #2b2620;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .hint { color: #6d675e; font-size: 13px; margin: 0 0 16px; }
+  .layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .panel {
+    background: #fff; border: 1px solid #d8d2c6; border-radius: 10px;
+    padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  #leftCol { flex: 0 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  #canvas { display: block; width: 420px; height: 420px; background: #fffdf8;
+    border: 1px solid #e4ddd0; border-radius: 6px; touch-action: none; }
+  #canvas .rowg path { fill: #2b2620; stroke: transparent; stroke-width: 4; cursor: pointer; }
+  #canvas .rowg.hover path { fill: #7a6c52; }
+  #canvas .rowg.selected path { fill: #c0392b; }
+  #canvas .grid { pointer-events: none; }
+  #canvas .grid line { stroke: #ece5d6; stroke-width: .5; }
+  #canvas .grid line.major { stroke: #d9cfb8; }
+  #canvas .grid line.center { stroke: #c9bda0; stroke-width: .8; }
+  #canvas .grid rect { fill: none; stroke: #d9cfb8; stroke-width: .8; }
+  #canvas .bbox { fill: rgba(192,57,43,.05); stroke: #c0392b; stroke-width: 1;
+    stroke-dasharray: 4 3; cursor: move; }
+  #canvas .handle { fill: #fff; stroke: #c0392b; stroke-width: 1.2; }
+  #sidebar { flex: 1 1 360px; min-width: 340px; display: flex; flex-direction: column; gap: 16px; }
+  h2 { font-size: 14px; margin: 0 0 8px; color: #4d463c; }
+  input[type=text] {
+    font: inherit; font-size: 14px; padding: 6px 10px;
+    border: 1px solid #b8b0a0; border-radius: 6px; background: #fffdf8;
+  }
+  .loadrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .loadrow input { width: 11em; }
+  .status { font-size: 12px; color: #97907f; min-height: 1.2em; margin-top: 6px; }
+  .status.err { color: #c0392b; }
+  .rowlist { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
+  .rowitem {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border: 1px solid #e0d9cc; border-radius: 6px;
+    font-size: 12px; cursor: pointer; background: #faf8f3;
+  }
+  .rowitem.selected { border-color: #c0392b; background: #fbeeec; }
+  .rowitem .tag {
+    flex: 0 0 auto; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    background: #e8e2d5; color: #5a5344;
+  }
+  .rowitem .tag.missing { background: #f6d9d5; color: #a33025; }
+  .rowitem .data { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-family: ui-monospace, Menlo, monospace; color: #6d675e; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 6px;
+    border: 1px solid #b8b0a0; background: #fff; cursor: pointer;
+  }
+  button:hover { background: #f0ece2; }
+  button.danger { border-color: #c0392b; color: #c0392b; }
+  button.danger:hover { background: #fbeeec; }
+  button:disabled { opacity: .4; cursor: default; }
+  .candidates { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  .cand {
+    width: 84px; border: 1px solid #e0d9cc; border-radius: 8px; padding: 6px;
+    text-align: center; cursor: pointer; background: #faf8f3;
+  }
+  .cand:hover { border-color: #8c7f68; }
+  .cand svg { width: 64px; height: 64px; display: block; margin: 0 auto; }
+  .cand svg path { fill: #2b2620; }
+  #presets { margin-top: 10px; }
+  .pcat { display: flex; align-items: baseline; gap: 8px; margin: 6px 0; }
+  .pcat .pname { flex: 0 0 4.5em; font-size: 11px; color: #97907f; }
+  .pcat .pchars { display: flex; flex-wrap: wrap; gap: 3px; }
+  .pchars button {
+    padding: 2px 0; width: 30px; font-size: 15px; line-height: 1.4;
+    border: 1px solid #e0d9cc; border-radius: 4px; background: #faf8f3;
+  }
+  .pchars button:hover { border-color: #8c7f68; background: #f0ece2; }
+  .selrow { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .boxgrid { display: grid; grid-template-columns: auto auto; gap: 6px 14px; }
+  .boxgrid label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .boxgrid label span.k { color: #6d675e; }
+  .boxgrid input[type=number] { width: 4.5em; font: inherit; font-size: 13px;
+    border: 1px solid #b8b0a0; border-radius: 4px; padding: 3px 4px; background: #fffdf8; }
+  textarea#output {
+    width: 100%; height: 84px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px; border: 1px solid #e0d9cc; border-radius: 6px; padding: 8px;
+    resize: vertical; background: #faf8f3; color: #4d463c;
+  }
+  .note { font-size: 12px; color: #97907f; margin-top: 6px; }
+  #copyBtn.done { border-color: #2e7d32; color: #2e7d32; }
+</style>
+</head>
+<body>
+<h1>拼字法造字工具</h1>
+<p class="hint">輸入任何漢字（或 GlyphWiki 字形名）載入，點選部件刪除，再搜尋任意部件插入、微調外框，輸出可直接提交 GlyphWiki 的 KAGE 資料。資料即時取自 GlyphWiki API（需要網路）。<br>
+範例流程：載入「槲」→ 點左邊的木 → 刪除 → 搜尋「食」→ 插入 u98e0-01 → 微調。</p>
+
+<div class="layout">
+  <div id="leftCol">
+    <div class="panel">
+      <div class="loadrow">
+        <input type="text" id="loadInput" placeholder="漢字或字形名 (如 u69f2)">
+        <button id="loadBtn">載入</button>
+        <button id="undoBtn" disabled>復原上一步 (⌘Z)</button>
+        <button id="resetBtn" disabled>重設</button>
+      </div>
+      <div class="status" id="loadStatus"></div>
+    </div>
+    <div class="panel">
+      <svg id="canvas" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"></svg>
+      <p class="note">點部件或筆畫選取／取消（可多選）；拖曳外框整體移動；拖八個把手整體縮放。</p>
+    </div>
+    <div class="panel">
+      <h2>輸出（KAGE 資料，可直接貼進 GlyphWiki 編輯框）</h2>
+      <textarea id="output" readonly></textarea>
+      <div class="btnrow" style="margin-top:8px">
+        <button id="copyBtn">複製</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="panel">
+      <h2>組成列（點選同步高亮）</h2>
+      <div class="rowlist" id="rowlist"></div>
+      <div class="btnrow" style="margin-top:10px">
+        <button id="delBtn" class="danger" disabled>刪除選取的部件</button>
+        <button id="sortBtn">依位置排序（左→右、上→下）</button>
+      </div>
+    </div>
+
+    <div class="selrow" id="selPanels" style="display:none">
+      <div class="panel" id="swapPanel" style="display:none; flex:1 1 220px">
+        <h2>替換候選（保留外框，只換部件）</h2>
+        <div class="candidates" id="swapCands"></div>
+      </div>
+      <div class="panel" id="adjustPanel" style="flex:0 1 auto">
+        <h2>外框（<span id="adjName"></span>）</h2>
+        <div class="boxgrid" id="boxInputs"></div>
+        <p class="note" style="margin-top:8px">畫布上拖曳外框/把手也可調整</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>插入部件</h2>
+      <div class="loadrow">
+        <input type="text" id="searchInput" placeholder="漢字或字形名 (如 食)">
+        <button id="searchBtn">搜尋</button>
+      </div>
+      <div id="presets"></div>
+      <div class="status" id="searchStatus"></div>
+      <div class="candidates" id="candidates" style="max-height:300px;overflow:auto"></div>
+      <p class="note">輸入漢字（或點上方部首）即列出可用的部件寫法，點縮圖即插入，
+        外框沿用最後刪除部件的位置。</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ---- GlyphWiki API：抓取 + 快取 + 遞迴補齊部品 ----
+var glyphCache = {};   // name -> data string ("" = 確認不存在)
+
+function fetchGlyph(name){
+  if(name in glyphCache) return Promise.resolve(glyphCache[name]);
+  return fetch("https://glyphwiki.org/api/glyph?name=" + encodeURIComponent(name))
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      glyphCache[name] = (j && j.data) ? j.data : "";
+      return glyphCache[name];
+    });
+}
+
+function refsOf(data){
+  var out = [];
+  if(!data) return out;
+  data.split("$").forEach(function(row){
+    var f = row.split(":");
+    if(Math.floor(f[0]) === 99 && f[7]) out.push(f[7]);
+  });
+  return out;
+}
+
+// 遞迴抓齊 data 用到的所有部品
+function ensureBuhin(data){
+  var pending = refsOf(data).filter(function(n){ return !(n in glyphCache); });
+  if(pending.length === 0) return Promise.resolve();
+  return Promise.all(pending.map(fetchGlyph)).then(function(datas){
+    return Promise.all(datas.map(ensureBuhin));
+  });
+}
+
+// GlyphWiki 慣例：uXXXX 常常只是別名（單一 99 列、全框 0:0:200:200 參照 uXXXX-j 等），
+// 解參照到實際的組成資料才有部件可選
+function dereferenceAlias(name){
+  return fetchGlyph(name).then(function(data){
+    if(!data) return { name: name, data: data };
+    var rows = data.split("$");
+    if(rows.length === 1){
+      var f = rows[0].split(":");
+      if(Math.floor(f[0]) === 99 && +f[1] === 0 && +f[2] === 0 &&
+         +f[3] === 0 && +f[4] === 0 && +f[5] === 200 && +f[6] === 200 && f[7]){
+        return dereferenceAlias(f[7]);
+      }
+    }
+    return { name: name, data: data };
+  });
+}
+
+function toGlyphName(input){
+  input = input.trim();
+  if(!input) return null;
+  if(/^[a-z0-9][a-z0-9-]*$/.test(input)) return input;   // 已是字形名
+  var cp = input.codePointAt(0);
+  return "u" + cp.toString(16).toLowerCase();
+}
+
+function newKage(){
+  var kage = new Kage();
+  for(var name in glyphCache){
+    if(glyphCache[name]) kage.kBuhin.push(name, glyphCache[name]);
+  }
+  return kage;
+}
+
+// ---- 狀態 ----
+var state = {
+  glyphName: null,       // 目前載入的字形名
+  originalRows: [],
+  rows: [],
+  selected: {},          // rowIndex -> true
+  lastDeletedBox: null   // [x1,y1,x2,y2]
+};
+
+function parse99(row){
+  var f = row.split(":");
+  if(Math.floor(f[0]) !== 99) return null;
+  return { fields: f, name: f[7], box: [ +f[3], +f[4], +f[5], +f[6] ] };
+}
+
+function build99(fields, box){
+  var f = fields.slice();
+  f[3] = box[0]; f[4] = box[1]; f[5] = box[2]; f[6] = box[3];
+  return f.join(":");
+}
+
+// ---- 渲染 ----
+function polygonsToPaths(polygons){
+  var d = [];
+  for(var i = 0; i < polygons.array.length; i++){
+    var pts = polygons.array[i].array;
+    if(pts.length < 3) continue;
+    var s = "M" + pts[0].x + " " + pts[0].y;
+    for(var j = 1; j < pts.length; j++){ s += "L" + pts[j].x + " " + pts[j].y; }
+    d.push(s + "Z");
+  }
+  return d;
+}
+
+// 200×200 定位網格：每 10 一細線、每 50 一粗線、100 中線、外框（僅供目測，無吸附）
+function renderGrid(svg){
+  var ns = "http://www.w3.org/2000/svg";
+  var g = document.createElementNS(ns, "g");
+  g.setAttribute("class", "grid");
+  for(var v = 10; v < 200; v += 10){
+    var cls = (v === 100) ? "center" : (v % 50 === 0) ? "major" : "";
+    var lh = document.createElementNS(ns, "line");
+    lh.setAttribute("x1", 0); lh.setAttribute("y1", v);
+    lh.setAttribute("x2", 200); lh.setAttribute("y2", v);
+    if(cls) lh.setAttribute("class", cls);
+    g.appendChild(lh);
+    var lv = document.createElementNS(ns, "line");
+    lv.setAttribute("x1", v); lv.setAttribute("y1", 0);
+    lv.setAttribute("x2", v); lv.setAttribute("y2", 200);
+    if(cls) lv.setAttribute("class", cls);
+    g.appendChild(lv);
+  }
+  var border = document.createElementNS(ns, "rect");
+  border.setAttribute("x", 0); border.setAttribute("y", 0);
+  border.setAttribute("width", 200); border.setAttribute("height", 200);
+  g.appendChild(border);
+  svg.appendChild(g);
+}
+
+function render(){
+  var svg = document.getElementById("canvas");
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  renderGrid(svg);
+  if(state.rows.length === 0){ renderRowList(); renderAdjustPanel(); renderOutput(); return; }
+
+  var kage = newKage();
+  // 每個頂層列展開後的筆畫數，用來把 makeGlyph3 的逐筆結果分區回列
+  var counts = state.rows.map(function(r){ return kage.getEachStrokes(r).length; });
+  var perStroke = kage.makeGlyph3(state.rows.join("$"));
+
+  var cursor = 0;
+  state.rows.forEach(function(row, ri){
+    var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("class", "rowg" + (state.selected[ri] ? " selected" : ""));
+    for(var k = 0; k < counts[ri]; k++){
+      var polygons = perStroke[cursor + k];
+      if(!polygons) continue;
+      polygonsToPaths(polygons).forEach(function(d){
+        var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.setAttribute("d", d);
+        g.appendChild(p);
+      });
+    }
+    cursor += counts[ri];
+    g.addEventListener("click", function(){ toggleSelect(ri); });
+    g.addEventListener("mouseenter", function(){ g.classList.add("hover"); });
+    g.addEventListener("mouseleave", function(){ g.classList.remove("hover"); });
+    svg.appendChild(g);
+  });
+
+  renderOverlay(svg);
+  renderRowList();
+  renderAdjustPanel();
+  renderOutput();
+  document.getElementById("delBtn").disabled = Object.keys(state.selected).length === 0;
+}
+
+// ---- 幾何工具：任意列（99 部件或手繪筆畫）的外框與平移 ----
+function rowBBox(row){
+  var f = row.split(":");
+  if(Math.floor(f[0]) === 99){
+    return [ Math.min(+f[3], +f[5]), Math.min(+f[4], +f[6]),
+             Math.max(+f[3], +f[5]), Math.max(+f[4], +f[6]) ];
+  }
+  var xs = [], ys = [];
+  for(var i = 3; i + 1 < f.length; i += 2){ xs.push(+f[i]); ys.push(+f[i+1]); }
+  return [ Math.min.apply(null, xs), Math.min.apply(null, ys),
+           Math.max.apply(null, xs), Math.max.apply(null, ys) ];
+}
+
+function translateRow(row, dx, dy){
+  var f = row.split(":");
+  if(Math.floor(f[0]) === 99){
+    f[3] = +f[3] + dx; f[4] = +f[4] + dy;
+    f[5] = +f[5] + dx; f[6] = +f[6] + dy;
+  } else {
+    for(var i = 3; i + 1 < f.length; i += 2){ f[i] = +f[i] + dx; f[i+1] = +f[i+1] + dy; }
+  }
+  return f.join(":");
+}
+
+// 把一列的座標從舊外框仿射映射到新外框（縮放用；99 部件與手繪筆畫皆可）
+function mapRowBox(row, ob, nb){
+  function mx(x){
+    var w = ob[2] - ob[0];
+    return Math.round(w < 0.01 ? x + nb[0] - ob[0] : nb[0] + (x - ob[0]) * (nb[2] - nb[0]) / w);
+  }
+  function my(y){
+    var h = ob[3] - ob[1];
+    return Math.round(h < 0.01 ? y + nb[1] - ob[1] : nb[1] + (y - ob[1]) * (nb[3] - nb[1]) / h);
+  }
+  var f = row.split(":");
+  if(Math.floor(f[0]) === 99){
+    f[3] = mx(+f[3]); f[4] = my(+f[4]); f[5] = mx(+f[5]); f[6] = my(+f[6]);
+  } else {
+    for(var i = 3; i + 1 < f.length; i += 2){ f[i] = mx(+f[i]); f[i+1] = my(+f[i+1]); }
+  }
+  return f.join(":");
+}
+
+// 選取列的聯合外框；寬/高不足時置中撐開到最小尺寸（豎/橫筆畫外框會是零寬/零高，
+// 否則虛線框細到點不到、縮放也會除以零）
+function unionBox(ris){
+  var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  ris.forEach(function(ri){
+    var b = rowBBox(state.rows[ri]);
+    x1 = Math.min(x1, b[0]); y1 = Math.min(y1, b[1]);
+    x2 = Math.max(x2, b[2]); y2 = Math.max(y2, b[3]);
+  });
+  var MIN = 8;
+  if(x2 - x1 < MIN){ var cx = (x1 + x2) / 2; x1 = cx - MIN/2; x2 = cx + MIN/2; }
+  if(y2 - y1 < MIN){ var cy = (y1 + y2) / 2; y1 = cy - MIN/2; y2 = cy + MIN/2; }
+  return [x1, y1, x2, y2];
+}
+
+// ---- 滑鼠拖曳：選取的列顯示聯合外框可整體移動；單選 99 列另有 8 個縮放把手 ----
+var drag = null;   // { mode, ris, startRows, box, start:{x,y}, moved }
+var rafPending = false;
+
+function scheduleRender(){
+  if(rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(function(){ rafPending = false; render(); });
+}
+
+function svgPoint(e){
+  var svg = document.getElementById("canvas");
+  var r = svg.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * 200,
+           y: (e.clientY - r.top) / r.height * 200 };
+}
+
+function renderOverlay(svg){
+  var ris = Object.keys(state.selected).map(Number);
+  if(ris.length === 0) return;
+  var ub = unionBox(ris);
+  var x1 = ub[0], y1 = ub[1], x2 = ub[2], y2 = ub[3];
+  var ns = "http://www.w3.org/2000/svg";
+  var g = document.createElementNS(ns, "g");
+
+  var rect = document.createElementNS(ns, "rect");
+  rect.setAttribute("class", "bbox");
+  rect.setAttribute("x", x1); rect.setAttribute("y", y1);
+  rect.setAttribute("width", x2 - x1); rect.setAttribute("height", y2 - y1);
+  rect.addEventListener("pointerdown", function(e){ startDrag("move", ris, e); });
+  g.appendChild(rect);
+
+  // 縮放把手：任何選取都提供（單/多選、部件/筆畫皆可，整體仿射縮放）
+  var HS = 7;
+  var w = x2 - x1, h = y2 - y1;
+  var handles = [
+    { mode:"nw", px:x1,      py:y1,      cur:"nwse-resize" },
+    { mode:"n",  px:x1+w/2,  py:y1,      cur:"ns-resize"   },
+    { mode:"ne", px:x1+w,    py:y1,      cur:"nesw-resize" },
+    { mode:"e",  px:x1+w,    py:y1+h/2,  cur:"ew-resize"   },
+    { mode:"se", px:x1+w,    py:y1+h,    cur:"nwse-resize" },
+    { mode:"s",  px:x1+w/2,  py:y1+h,    cur:"ns-resize"   },
+    { mode:"sw", px:x1,      py:y1+h,    cur:"nesw-resize" },
+    { mode:"w",  px:x1,      py:y1+h/2,  cur:"ew-resize"   }
+  ];
+  handles.forEach(function(hd){
+    var hrect = document.createElementNS(ns, "rect");
+    hrect.setAttribute("class", "handle");
+    hrect.setAttribute("x", hd.px - HS/2); hrect.setAttribute("y", hd.py - HS/2);
+    hrect.setAttribute("width", HS); hrect.setAttribute("height", HS);
+    hrect.style.cursor = hd.cur;
+    hrect.addEventListener("pointerdown", function(e){ startDrag(hd.mode, ris, e); });
+    g.appendChild(hrect);
+  });
+  svg.appendChild(g);
+}
+
+function startDrag(mode, ris, e){
+  e.preventDefault(); e.stopPropagation();
+  var startRows = {};
+  ris.forEach(function(ri){ startRows[ri] = state.rows[ri]; });
+  pushHistory();
+  drag = { mode: mode, ris: ris, startRows: startRows,
+           box: unionBox(ris), start: svgPoint(e), moved: false };
+  window.addEventListener("pointermove", onDrag);
+  window.addEventListener("pointerup", endDrag);
+}
+
+function onDrag(e){
+  if(!drag) return;
+  var pt = svgPoint(e);
+  var dx = Math.round(pt.x - drag.start.x), dy = Math.round(pt.y - drag.start.y);
+  if(Math.abs(dx) + Math.abs(dy) > 1) drag.moved = true;
+  if(drag.mode === "move"){
+    drag.ris.forEach(function(ri){
+      state.rows[ri] = translateRow(drag.startRows[ri], dx, dy);
+    });
+  } else {
+    var ob = drag.box;
+    var b = ob.slice();
+    var m = drag.mode;
+    if(m.indexOf("w") >= 0) b[0] += dx;
+    if(m.indexOf("e") >= 0) b[2] += dx;
+    if(m.indexOf("n") >= 0) b[1] += dy;
+    if(m.indexOf("s") >= 0) b[3] += dy;
+    // 最小尺寸，避免拖成零寬/翻面
+    if(b[2] - b[0] < 5){ if(m.indexOf("w") >= 0) b[0] = b[2] - 5; else b[2] = b[0] + 5; }
+    if(b[3] - b[1] < 5){ if(m.indexOf("n") >= 0) b[1] = b[3] - 5; else b[3] = b[1] + 5; }
+    drag.ris.forEach(function(ri){
+      state.rows[ri] = mapRowBox(drag.startRows[ri], ob, b);
+    });
+  }
+  scheduleRender();
+}
+
+function endDrag(){
+  window.removeEventListener("pointermove", onDrag);
+  window.removeEventListener("pointerup", endDrag);
+  if(!drag) return;
+  var wasMoved = drag.moved;
+  drag = null;
+  popHistoryIfUnchanged();   // 沒真的動就不留歷史
+  if(!wasMoved){ state.selected = {}; render(); }  // 原地點一下 = 取消選取
+  else render();
+}
+
+// ---- 依位置排序：同一橫排從左到右，否則從上到下（閱讀順序） ----
+function comparePos(a, b){
+  var overlap = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+  if(overlap > 0.5 * Math.min(a[3] - a[1], b[3] - b[1])){
+    return (a[0] + a[2]) - (b[0] + b[2]);   // 垂直重疊過半 → 視為同一排，比 x
+  }
+  return (a[1] + a[3]) - (b[1] + b[3]);     // 否則比 y
+}
+
+function sortRows(){
+  pushHistory();
+  // 用實際渲染的筆墨範圍排序，而非 99 外框——偏旁形部件（-01/-02 等）的
+  // 外框常大量重疊（筆墨只畫在框的偏側），外框中心會排錯
+  var kage = newKage();
+  var counts = state.rows.map(function(r){ return kage.getEachStrokes(r).length; });
+  var per = kage.makeGlyph3(state.rows.join("$"));
+  var cursor = 0;
+  var withBox = state.rows.map(function(r, ri){
+    var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for(var k = 0; k < counts[ri]; k++){
+      var pg = per[cursor + k];
+      if(pg) pg.array.forEach(function(poly){
+        poly.array.forEach(function(pt){
+          x1 = Math.min(x1, pt.x); y1 = Math.min(y1, pt.y);
+          x2 = Math.max(x2, pt.x); y2 = Math.max(y2, pt.y);
+        });
+      });
+    }
+    cursor += counts[ri];
+    var b = (x1 === Infinity) ? rowBBox(r) : [x1, y1, x2, y2];
+    return { r: r, b: b };
+  });
+  withBox.sort(function(p, q){ return comparePos(p.b, q.b); });
+  state.rows = withBox.map(function(p){ return p.r; });
+  state.selected = {};
+  popHistoryIfUnchanged();   // 順序沒變就不留歷史
+  render();
+}
+
+function renderRowList(){
+  var list = document.getElementById("rowlist");
+  list.innerHTML = "";
+  state.rows.forEach(function(row, ri){
+    var item = document.createElement("div");
+    item.className = "rowitem" + (state.selected[ri] ? " selected" : "");
+    var p = parse99(row);
+    var tag = document.createElement("span");
+    if(p && glyphCache[p.name] === ""){
+      tag.className = "tag missing";
+      tag.textContent = "查無 " + p.name;
+    } else {
+      tag.className = "tag";
+      if(p){
+        var ch = nameToChar(p.name);
+        tag.textContent = "部件 " + (ch ? ch + " " : "") + p.name;
+      } else {
+        tag.textContent = "筆畫";
+      }
+    }
+    var data = document.createElement("span");
+    data.className = "data";
+    data.textContent = row;
+    item.appendChild(tag); item.appendChild(data);
+    item.addEventListener("click", function(){ toggleSelect(ri); });
+    list.appendChild(item);
+  });
+}
+
+// ---- 載入 ----
+function setStatus(id, msg, isErr){
+  var el = document.getElementById(id);
+  el.textContent = msg || "";
+  el.className = "status" + (isErr ? " err" : "");
+}
+
+function loadGlyph(input){
+  var name = toGlyphName(input);
+  if(!name){ setStatus("loadStatus", "請輸入漢字或字形名", true); return; }
+  setStatus("loadStatus", "載入 " + name + " ⋯");
+  dereferenceAlias(name).then(function(res){
+    if(!res.data){
+      setStatus("loadStatus", "GlyphWiki 上查無 " + name, true);
+      return;
+    }
+    return ensureBuhin(res.data).then(function(){
+      state.glyphName = res.name;
+      state.originalRows = res.data.split("$");
+      state.rows = state.originalRows.slice();
+      state.selected = {};
+      state.lastDeletedBox = null;
+      undoStack = [];          // 載入新字 = 全新編輯階段
+      updateUndoBtn();
+      var aliasNote = (res.name !== name) ? "（" + name + " → " + res.name + "）" : "";
+      setStatus("loadStatus", "已載入 " + res.name + " " + aliasNote);
+      document.getElementById("resetBtn").disabled = false;
+      render();
+    });
+  }).catch(function(e){
+    setStatus("loadStatus", "載入失敗：" + e, true);
+  });
+}
+
+// ---- 部件搜尋：試 GlyphWiki 的位置變體命名 ----
+var VARIANT_SUFFIXES = ["", "-01","-02","-03","-04","-05","-06","-07","-08","-09",
+                        "-10","-11","-12","-13","-14","-j","-g","-t","-k","-v","-jv"];
+
+// 以渲染結果為指紋，簡併形狀完全相同的變體（如「田」的 -01/-02/-j/-g 多為同形）
+function dedupeByShape(names){
+  var out = [], seen = {};
+  names.forEach(function(n){
+    var kage = newKage();
+    var polygons = new Polygons();
+    kage.makeGlyph(polygons, n);
+    var paths = polygonsToPaths(polygons);
+    if(paths.length === 0) return;      // 畫不出來的不列
+    var key = paths.join(";");
+    if(seen[key]) return;               // 同形 → 簡併，保留先出現的（基本名優先）
+    seen[key] = 1;
+    out.push({ name: n, paths: paths });
+  });
+  return out;
+}
+
+function renderCandList(names, container, onClick){
+  var items = dedupeByShape(names);
+  container.innerHTML = "";
+  var svgns = "http://www.w3.org/2000/svg";
+  items.forEach(function(it){
+    var div = document.createElement("div");
+    div.className = "cand";
+    div.title = it.name;
+    var svg = document.createElementNS(svgns, "svg");
+    svg.setAttribute("viewBox", "0 0 200 200");
+    it.paths.forEach(function(d){
+      var p = document.createElementNS(svgns, "path");
+      p.setAttribute("d", d);
+      svg.appendChild(p);
+    });
+    div.appendChild(svg);
+    div.addEventListener("click", function(){ onClick(it.name); });
+    container.appendChild(div);
+  });
+  return items.length;
+}
+
+// 統一搜尋：GlyphWiki 位置變體探測 + 本地常用部件庫，合併去重後只顯示字形縮圖
+function searchAll(input){
+  var q = (input || "").trim();
+  var wrap = document.getElementById("candidates");
+  if(!q){ setStatus("searchStatus", ""); wrap.innerHTML = ""; return; }
+  var base = toGlyphName(q);
+  if(!base){ setStatus("searchStatus", "請輸入漢字或字形名", true); return; }
+  setStatus("searchStatus", "搜尋中⋯");
+  var names = VARIANT_SUFFIXES.map(function(s){ return base + s; });
+  LIB.forEach(function(e){
+    if(e.ch === q || e.name === base || e.name.indexOf(base + "-") === 0){
+      if(names.indexOf(e.name) < 0) names.push(e.name);
+    }
+  });
+  names = names.slice(0, 60);
+  Promise.all(names.map(fetchGlyph)).then(function(ds){
+    var found = names.filter(function(n, i){ return ds[i] !== ""; });
+    if(found.length === 0){
+      setStatus("searchStatus", "查無 " + q, true);
+      wrap.innerHTML = "";
+      return;
+    }
+    return Promise.all(found.map(function(n){ return ensureBuhin(glyphCache[n]); }))
+      .then(function(){
+        var shown = renderCandList(found, wrap, insertComponent);
+        setStatus("searchStatus", shown + " 種寫法（同形已合併），點縮圖插入：");
+      });
+  }).catch(function(e){
+    setStatus("searchStatus", "搜尋失敗：" + e, true);
+  });
+}
+
+function insertComponent(name){
+  fetchGlyph(name).then(ensureBuhin).then(function(){ addComponent(name); });
+}
+
+// ---- 部件名 ↔ 字元 對應（依 GlyphWiki 的 u+碼位命名慣例） ----
+function nameToChar(name){
+  var m = /^u([0-9a-f]{4,6})(-|$)/.exec(name);
+  if(!m || name.indexOf("u2ff") === 0) return null;
+  return String.fromCodePoint(parseInt(m[1], 16));
+}
+
+// ---- 部件庫（components.js，GlyphWiki dump 統計 + char-components vt 異體映射） ----
+var LIB = [];   // [{name, count, ch}] 按次數降冪
+if(typeof GW_COMPONENTS !== "undefined"){
+  Object.keys(GW_COMPONENTS.chars).forEach(function(ch){
+    GW_COMPONENTS.chars[ch].forEach(function(e){ LIB.push({ name: e[0], count: e[1], ch: ch }); });
+  });
+  GW_COMPONENTS.others.forEach(function(e){ LIB.push({ name: e[0], count: e[1], ch: null }); });
+  LIB.sort(function(a, b){ return b.count - a.count; });
+}
+
+// ---- 替換候選：同字其他位置變體 + vt 異體字的部件（保留外框只換部件名） ----
+function swapComponent(ri, name){
+  fetchGlyph(name).then(ensureBuhin).then(function(){
+    pushHistory();
+    var f = state.rows[ri].split(":");
+    f[7] = name;
+    state.rows[ri] = f.join(":");
+    render();
+  });
+}
+
+var swapKey = null;   // 避免拖曳中每一幀都重抓/重畫縮圖
+
+function renderSwapArea(sel){
+  var area = document.getElementById("swapPanel");
+  if(!sel || typeof GW_COMPONENTS === "undefined"){ area.style.display = "none"; swapKey = null; return; }
+  var ch = nameToChar(sel.p.name);
+  if(!ch){ area.style.display = "none"; swapKey = null; return; }
+  var key = sel.ri + "|" + sel.p.name;
+  if(swapKey === key) return;   // 同一個選取，縮圖不變
+  swapKey = key;
+  // 收集：同字元的其他部件 + vt 正字/變體字元的部件
+  var relChars = [ch];
+  if(GW_COMPONENTS.vt && GW_COMPONENTS.vt[ch]) relChars.push(GW_COMPONENTS.vt[ch]);
+  if(GW_COMPONENTS.vtRev && GW_COMPONENTS.vtRev[ch])
+    relChars = relChars.concat(GW_COMPONENTS.vtRev[ch]);
+  var seen = {};
+  var names = [];
+  relChars.forEach(function(c){
+    (GW_COMPONENTS.chars[c] || []).forEach(function(e){
+      if(e[0] !== sel.p.name && !seen[e[0]]){ seen[e[0]] = 1; names.push(e[0]); }
+    });
+  });
+  names = names.slice(0, 12);
+  if(names.length === 0){ area.style.display = "none"; return; }
+  area.style.display = "";
+  var wrap = document.getElementById("swapCands");
+  // 先抓齊資料再畫縮圖
+  Promise.all(names.map(fetchGlyph))
+    .then(function(ds){ return Promise.all(ds.map(ensureBuhin)); })
+    .then(function(){
+      renderCandList(names, wrap, function(n){ swapComponent(sel.ri, n); });
+    });
+}
+
+// ---- 常用部件預設面板：點一下即搜尋該部首的位置變體 ----
+var PRESETS = [
+  ["偏（左）", "亻彳氵冫扌犭木禾米糸言金飠馬魚山土王石田目日月火礻衤忄女子虫舟車貝足酉阝弓"],
+  ["旁（右）", "刂卩攵欠頁隹殳斤見寸力鳥"],
+  ["冠（上）", "宀冖亠艹⺮雨爫罒癶人八"],
+  ["脚（下）", "心灬儿皿廾巾"],
+  ["繞・構", "辶廴疒广厂尸門囗勹匚气走鬼戈"]
+];
+
+function renderPresets(){
+  var wrap = document.getElementById("presets");
+  PRESETS.forEach(function(cat){
+    var row = document.createElement("div");
+    row.className = "pcat";
+    var name = document.createElement("span");
+    name.className = "pname"; name.textContent = cat[0];
+    var chars = document.createElement("span");
+    chars.className = "pchars";
+    Array.from(cat[1]).forEach(function(ch){
+      var btn = document.createElement("button");
+      btn.textContent = ch;
+      btn.title = "搜尋 " + ch + " 的部件變體";
+      btn.addEventListener("click", function(){
+        document.getElementById("searchInput").value = ch;
+        searchAll(ch);
+      });
+      chars.appendChild(btn);
+    });
+    row.appendChild(name); row.appendChild(chars);
+    wrap.appendChild(row);
+  });
+}
+
+// ---- 微調面板：單選一個 99 列時顯示 x1/y1/x2/y2 滑桿 ----
+function selectedSingle99(){
+  var keys = Object.keys(state.selected);
+  if(keys.length !== 1) return null;
+  var ri = +keys[0];
+  var p = parse99(state.rows[ri]);
+  return p ? { ri: ri, p: p } : null;
+}
+
+var adjustKey = null;   // 目前面板對應的「列+部件名」，避免每次重繪都重建輸入框（會失焦）
+
+function renderAdjustPanel(){
+  var wrap = document.getElementById("selPanels");
+  var sel = selectedSingle99();
+  if(!sel){ wrap.style.display = "none"; adjustKey = null; return; }
+  wrap.style.display = "";
+  var ch = nameToChar(sel.p.name);
+  document.getElementById("adjName").textContent = (ch ? ch + " " : "") + sel.p.name;
+  renderSwapArea(sel);
+  var grid = document.getElementById("boxInputs");
+  var key = sel.ri + "|" + sel.p.name;
+  if(adjustKey === key && grid.children.length === 4){
+    // 同一個選取：只同步數值（跳過使用者正在輸入的欄位），不重建 DOM
+    sel.p.box.forEach(function(v, bi){
+      var num = grid.children[bi].querySelector("input");
+      if(document.activeElement !== num) num.value = v;
+    });
+    return;
+  }
+  adjustKey = key;
+  grid.innerHTML = "";
+  var labels = ["左", "上", "右", "下"];
+  sel.p.box.forEach(function(v, bi){
+    var label = document.createElement("label");
+    var k = document.createElement("span");
+    k.className = "k"; k.textContent = labels[bi];
+    var num = document.createElement("input");
+    num.type = "number"; num.step = 1; num.value = v;
+    num.addEventListener("input", function(){
+      if(num.value === "" || isNaN(+num.value)) return;
+      if(sliderHistoryArmed){ pushHistory(); sliderHistoryArmed = false; }
+      var box = parse99(state.rows[sel.ri]).box;
+      box[bi] = +num.value;
+      state.rows[sel.ri] = build99(parse99(state.rows[sel.ri]).fields, box);
+      render();
+    });
+    label.appendChild(k); label.appendChild(num);
+    grid.appendChild(label);
+  });
+}
+
+// ---- 歷史棧（undo）----
+var undoStack = [];
+var sliderHistoryArmed = true;   // 一段連續滑桿拖動只記一筆歷史
+
+function pushHistory(){
+  undoStack.push(state.rows.slice());
+  if(undoStack.length > 100) undoStack.shift();
+  updateUndoBtn();
+}
+
+function popHistoryIfUnchanged(){
+  if(undoStack.length &&
+     undoStack[undoStack.length - 1].join("$") === state.rows.join("$")){
+    undoStack.pop();
+  }
+  updateUndoBtn();
+}
+
+function undo(){
+  if(undoStack.length === 0) return;
+  state.rows = undoStack.pop();
+  state.selected = {};
+  updateUndoBtn();
+  render();
+}
+
+function updateUndoBtn(){
+  document.getElementById("undoBtn").disabled = undoStack.length === 0;
+}
+
+// ---- 操作 ----
+function toggleSelect(ri){
+  if(state.selected[ri]) delete state.selected[ri];
+  else state.selected[ri] = true;
+  render();
+}
+
+function deleteSelected(){
+  var indices = Object.keys(state.selected).map(Number).sort(function(a,b){ return b-a; });
+  if(indices.length === 0) return;
+  pushHistory();
+  for(var i = 0; i < indices.length; i++){
+    var p = parse99(state.rows[indices[i]]);
+    if(p){ state.lastDeletedBox = p.box; break; }
+  }
+  indices.forEach(function(ri){ state.rows.splice(ri, 1); });
+  state.selected = {};
+  render();
+}
+
+function addComponent(name){
+  pushHistory();
+  var box = state.lastDeletedBox || [10, 0, 190, 200];
+  var row = "99:0:0:" + box.join(":") + ":" + name;
+  state.rows.push(row);
+  state.selected = {};
+  state.selected[state.rows.length - 1] = true; // 直接選取新列方便微調
+  render();
+}
+
+function renderOutput(){
+  document.getElementById("output").value = state.rows.join("$");
+}
+
+document.getElementById("loadBtn").addEventListener("click", function(){
+  loadGlyph(document.getElementById("loadInput").value);
+});
+document.getElementById("loadInput").addEventListener("keydown", function(e){
+  if(e.key === "Enter") loadGlyph(this.value);
+});
+document.getElementById("resetBtn").addEventListener("click", function(){
+  pushHistory();
+  state.rows = state.originalRows.slice();
+  state.selected = {};
+  state.lastDeletedBox = null;
+  popHistoryIfUnchanged();
+  render();
+});
+document.getElementById("undoBtn").addEventListener("click", undo);
+// 一段連續滑桿拖動只記一筆歷史：放開（pointerup/keyup）後才重新武裝
+window.addEventListener("pointerup", function(){ sliderHistoryArmed = true; });
+window.addEventListener("keyup", function(){ sliderHistoryArmed = true; });
+window.addEventListener("keydown", function(e){
+  if((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z"){
+    var t = e.target.tagName;
+    if(t === "INPUT" || t === "TEXTAREA") return;  // 文字框保留原生 undo
+    e.preventDefault();
+    undo();
+  }
+});
+document.getElementById("searchBtn").addEventListener("click", function(){
+  searchAll(document.getElementById("searchInput").value);
+});
+document.getElementById("searchInput").addEventListener("keydown", function(e){
+  if(e.key === "Enter") searchAll(this.value);
+});
+document.getElementById("delBtn").addEventListener("click", deleteSelected);
+document.getElementById("sortBtn").addEventListener("click", sortRows);
+document.getElementById("copyBtn").addEventListener("click", function(){
+  var ta = document.getElementById("output");
+  ta.select();
+  var ok = false;
+  try { ok = document.execCommand("copy"); } catch(e){}
+  if(navigator.clipboard){ navigator.clipboard.writeText(ta.value).catch(function(){}); ok = true; }
+  var btn = document.getElementById("copyBtn");
+  if(ok){ btn.textContent = "已複製 ✓"; btn.classList.add("done");
+    setTimeout(function(){ btn.textContent = "複製"; btn.classList.remove("done"); }, 1500); }
+});
+
+// 打字自動搜尋（400ms 防抖；中文輸入法組字中不觸發）
+var searchDebounce = null;
+document.getElementById("searchInput").addEventListener("input", function(e){
+  if(e.isComposing) return;
+  clearTimeout(searchDebounce);
+  var v = this.value;
+  searchDebounce = setTimeout(function(){ searchAll(v); }, 400);
+});
+
+renderPresets();
+
+// 啟動時隨機載入一個複雜結構的字當示範
+var COMPLEX_SAMPLES = ["槲","灣","響","麗","靈","鷹","廳","鬱","讚","戀",
+                       "籲","鑿","釁","曦","瀟","髓","攀","疆","鰲","爨"];
+var startChar = COMPLEX_SAMPLES[Math.floor(Math.random() * COMPLEX_SAMPLES.length)];
+document.getElementById("loadInput").value = startChar;
+loadGlyph(startChar);
+</script>
+</body>
+</html>
