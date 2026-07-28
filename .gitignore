@@ -59,3 +59,6 @@ jspm_packages/
 
 /lib
 /dist
+
+# 本 fork：Cloudflare Wrangler 本機狀態
+.wrangler/
