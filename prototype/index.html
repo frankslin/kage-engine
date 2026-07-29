@@ -182,15 +182,63 @@
 <script>
 // ---- GlyphWiki API：抓取 + 快取 + 遞迴補齊部品 ----
 var glyphCache = {};   // name -> data string ("" = 確認不存在)
+var inflight = {};     // name -> Promise，同名併發只發一次請求
+
+// 一次搜尋會展開成幾十個名稱（VARIANT_SUFFIXES + 部件庫），全部同時發出去會被
+// GlyphWiki 限流——被限流時回應沒有 CORS 標頭，瀏覽器端看到的是 fetch 直接失敗。
+// 用一個小水位把併發壓住，再配合下面的重試，才不會整頁「查無此字」。
+var MAX_INFLIGHT = 6;
+var slotsUsed = 0;
+var slotQueue = [];
+
+function acquireSlot(){
+  if(slotsUsed < MAX_INFLIGHT){ slotsUsed++; return Promise.resolve(); }
+  return new Promise(function(resolve){ slotQueue.push(resolve); });
+}
+function releaseSlot(){
+  var next = slotQueue.shift();
+  if(next) next();      // 名額直接交棒給下一個等待者，不動計數
+  else slotsUsed--;
+}
+
+function delay(ms){
+  return new Promise(function(resolve){ setTimeout(resolve, ms); });
+}
+
+// GlyphWiki 對「查無此字」是回 200 + data:null，跟傳輸失敗（限流、斷線）分得開，
+// 所以只在後者重試；查無此字直接當結果快取起來。
+function fetchGlyphOnce(name, triesLeft){
+  return fetch("https://glyphwiki.org/api/glyph?name=" + encodeURIComponent(name))
+    .then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(j){ return (j && j.data) ? j.data : ""; })
+    .catch(function(e){
+      if(triesLeft <= 1) throw e;
+      return delay(500 * (3 - triesLeft)).then(function(){
+        return fetchGlyphOnce(name, triesLeft - 1);
+      });
+    });
+}
 
 function fetchGlyph(name){
   if(name in glyphCache) return Promise.resolve(glyphCache[name]);
-  return fetch("https://glyphwiki.org/api/glyph?name=" + encodeURIComponent(name))
-    .then(function(r){ return r.json(); })
-    .then(function(j){
-      glyphCache[name] = (j && j.data) ? j.data : "";
-      return glyphCache[name];
-    });
+  if(name in inflight) return inflight[name];
+  var p = acquireSlot().then(function(){
+    return fetchGlyphOnce(name, 3);
+  }).then(function(data){
+    releaseSlot();
+    delete inflight[name];
+    glyphCache[name] = data;   // 只有真的問到答案才寫進快取
+    return data;
+  }, function(e){
+    releaseSlot();
+    delete inflight[name];     // 失敗不留快取，下次可重試（否則一次抖動會讓該字永久「不存在」）
+    throw e;
+  });
+  inflight[name] = p;
+  return p;
 }
 
 function refsOf(data){
@@ -255,6 +303,7 @@ var state = {
 };
 
 function parse99(row){
+  if(!row) return null;   // 選取索引可能落在已不存在的列上（載入失敗、刪除後的殘留選取）
   var f = row.split(":");
   if(Math.floor(f[0]) !== 99) return null;
   return { fields: f, name: f[7], box: [ +f[3], +f[4], +f[5], +f[6] ] };
@@ -581,16 +630,23 @@ function setStatus(id, msg, isErr){
   el.className = "status" + (isErr ? " err" : "");
 }
 
+// 每次載入配一個序號：慢的舊請求回來時序號已過期，就不要覆蓋新的載入結果
+// （啟動時的隨機範例字與使用者馬上輸入的字會賽跑）
+var loadSeq = 0;
+
 function loadGlyph(input){
   var name = toGlyphName(input);
   if(!name){ setStatus("loadStatus", "請輸入漢字或字形名", true); return; }
+  var seq = ++loadSeq;
   setStatus("loadStatus", "載入 " + name + " ⋯");
-  dereferenceAlias(name).then(function(res){
+  return dereferenceAlias(name).then(function(res){
+    if(seq !== loadSeq) return;
     if(!res.data){
       setStatus("loadStatus", "GlyphWiki 上查無 " + name, true);
       return;
     }
     return ensureBuhin(res.data).then(function(){
+      if(seq !== loadSeq) return;
       state.glyphName = res.name;
       state.originalRows = res.data.split("$");
       state.rows = state.originalRows.slice();
@@ -604,7 +660,8 @@ function loadGlyph(input){
       render();
     });
   }).catch(function(e){
-    setStatus("loadStatus", "載入失敗：" + e, true);
+    if(seq !== loadSeq) return;   // 過期的失敗不要蓋掉新載入的狀態
+    setStatus("loadStatus", "載入失敗（GlyphWiki 可能暫時無回應，稍後再試）：" + e, true);
   });
 }
 
@@ -684,7 +741,11 @@ function searchAll(input){
 }
 
 function insertComponent(name){
-  fetchGlyph(name).then(ensureBuhin).then(function(){ addComponent(name); });
+  return fetchGlyph(name).then(ensureBuhin).then(function(){
+    addComponent(name);
+  }).catch(function(e){
+    setStatus("searchStatus", "插入 " + name + " 失敗（GlyphWiki 可能暫時無回應）：" + e, true);
+  });
 }
 
 // ---- 部件名 ↔ 字元 對應（依 GlyphWiki 的 u+碼位命名慣例） ----
@@ -955,6 +1016,7 @@ function updateUndoBtn(){
 
 // ---- 操作 ----
 function toggleSelect(ri){
+  if(ri < 0 || ri >= state.rows.length) return;   // 忽略對不存在的列的選取
   if(state.selected[ri]) delete state.selected[ri];
   else state.selected[ri] = true;
   render();
