@@ -99,6 +99,14 @@
     resize: vertical; background: #faf8f3; color: #4d463c;
   }
   .note { font-size: 12px; color: #97907f; margin-top: 6px; }
+  /* 字體風格切換：預覽用，不影響輸出的 KAGE 資料 */
+  .shotairow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .shotairow .label { font-size: 12px; color: #97907f; }
+  .seg { display: inline-flex; border: 1px solid #d8d2c6; border-radius: 6px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; padding: 4px 12px; font-size: 13px; background: #fff; }
+  .seg button + button { border-left: 1px solid #d8d2c6; }
+  .seg button.on { background: #2b2620; color: #fff; }
+  .seg button.on:hover { background: #2b2620; }
   #copyBtn.done { border-color: #2e7d32; color: #2e7d32; }
 </style>
 </head>
@@ -119,8 +127,17 @@
       <div class="status" id="loadStatus"></div>
     </div>
     <div class="panel">
+      <div class="shotairow">
+        <span class="label">預覽字體</span>
+        <span class="seg">
+          <button id="shotaiMincho" class="on">明朝（serif）</button>
+          <button id="shotaiGothic">黑體（sans）</button>
+        </span>
+        <span class="label">只影響預覽，輸出的 KAGE 資料不變</span>
+      </div>
       <svg id="canvas" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"></svg>
-      <p class="note">點部件或筆畫選取／取消（可多選）；拖曳外框整體移動；拖八個把手整體縮放。</p>
+      <p class="note">點部件或筆畫選取／取消（可多選）；拖曳外框整體移動；拖八個把手整體縮放。<br>
+        黑體沒有明朝體那套自動微調（鱗會自動縮小、勾會自動避讓），部件沒擺好會看得更清楚，適合當校對視圖。</p>
     </div>
     <div class="panel">
       <h2>輸出（KAGE 資料，可直接貼進 GlyphWiki 編輯框）</h2>
@@ -287,6 +304,8 @@ function toGlyphName(input){
 
 function newKage(){
   var kage = new Kage();
+  // 明朝/黑體是引擎層的選擇；bundle 沒有匯出 KShotai，但實例上有 kMincho/kGothic
+  kage.kShotai = state.shotai ? kage.kGothic : kage.kMincho;
   for(var name in glyphCache){
     if(glyphCache[name]) kage.kBuhin.push(name, glyphCache[name]);
   }
@@ -299,7 +318,8 @@ var state = {
   originalRows: [],
   rows: [],
   selected: {},          // rowIndex -> true
-  lastDeletedBox: null   // [x1,y1,x2,y2]
+  lastDeletedBox: null,  // [x1,y1,x2,y2]
+  shotai: 0              // 0=明朝 1=黑體。純預覽設定，不進 undo 棧（不是編輯操作）
 };
 
 function parse99(row){
@@ -708,6 +728,8 @@ function renderCandList(names, container, onClick){
   return items.length;
 }
 
+var lastSearchFound = null;   // 最近一次搜尋命中的名稱，供切換預覽字體時重畫縮圖
+
 // 統一搜尋：GlyphWiki 位置變體探測 + 本地常用部件庫，合併去重後只顯示字形縮圖
 function searchAll(input){
   var q = (input || "").trim();
@@ -723,7 +745,7 @@ function searchAll(input){
     }
   });
   names = names.slice(0, 60);
-  Promise.all(names.map(fetchGlyph)).then(function(ds){
+  return Promise.all(names.map(fetchGlyph)).then(function(ds){
     var found = names.filter(function(n, i){ return ds[i] !== ""; });
     if(found.length === 0){
       setStatus("searchStatus", "查無 " + q, true);
@@ -732,6 +754,7 @@ function searchAll(input){
     }
     return Promise.all(found.map(function(n){ return ensureBuhin(glyphCache[n]); }))
       .then(function(){
+        lastSearchFound = found;   // 切換預覽字體時要用同一批名稱重畫縮圖
         var shown = renderCandList(found, wrap, insertComponent);
         setStatus("searchStatus", shown + " 種寫法（同形已合併），點縮圖插入：");
       });
@@ -1087,6 +1110,23 @@ document.getElementById("idsInput").addEventListener("keydown", function(e){
 });
 document.getElementById("delBtn").addEventListener("click", deleteSelected);
 document.getElementById("sortBtn").addEventListener("click", sortRows);
+
+// ---- 預覽字體切換（明朝／黑體）----
+// 只換渲染方式，不動 state.rows，所以不進 undo 棧。
+// render() 會連帶重畫組成列與替換候選縮圖（都走 newKage()）；搜尋結果的縮圖
+// 不在 render() 的範圍內，要另外用上次命中的名稱重畫。
+function setShotai(shotai){
+  if(state.shotai === shotai) return;
+  state.shotai = shotai;
+  document.getElementById("shotaiMincho").classList.toggle("on", shotai === 0);
+  document.getElementById("shotaiGothic").classList.toggle("on", shotai === 1);
+  render();
+  if(lastSearchFound){
+    renderCandList(lastSearchFound, document.getElementById("candidates"), insertComponent);
+  }
+}
+document.getElementById("shotaiMincho").addEventListener("click", function(){ setShotai(0); });
+document.getElementById("shotaiGothic").addEventListener("click", function(){ setShotai(1); });
 document.getElementById("copyBtn").addEventListener("click", function(){
   var ta = document.getElementById("output");
   ta.select();
