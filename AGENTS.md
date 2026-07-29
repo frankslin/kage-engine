@@ -6,66 +6,104 @@
 
 `kage-engine` 是 KAGE 漢字字形生成引擎，把「筆畫資料字串」轉成向量多邊形輪廓（可輸出 SVG/EPS），用來產生明朝體/黑體風格的漢字字形。
 
-**本 repo（`frankslin/kage-engine`）是 `kamichikoichi/kage-engine` 的 fork**，fork 當下與上游完全一致——既有 commit 均出自上游作者 Koichi Kamichi 及被合併的貢獻者（Kurogoma/kurgm、MihailJP）。文件類提交（AGENTS.md/CLAUDE.md/WALKTHROUGH.md）之後的 commit 才是本 fork 的獨立開發。
+**本 repo（`frankslin/kage-engine`）的引擎本體來自 [`kurgm/kage-engine`](https://github.com/kurgm/kage-engine)**
+（GPL-3.0，已設為 remote `kurgm`），它本身是 GlyphWiki 官方上游 `kamichikoichi/kage-engine` 的 fork。
+本 fork 自己的內容是：
 
-詳細架構、資料格式、演算法說明見 [`WALKTHROUGH.md`](./WALKTHROUGH.md)——**開始改程式碼前務必先讀那份文件**，這裡不重複展開。
+- `prototype/` — 拼字法造字工具（瀏覽器端）
+- `doc/` — 繁體中文的引擎導覽與 KAGE 資料格式規格
 
-## 現況：沒有建置/測試/lint 工具鏈
+詳細架構、資料格式、演算法說明見 [`doc/WALKTHROUGH.md`](./doc/WALKTHROUGH.md)——**開始改程式碼前務必先讀那份文件**，這裡不重複展開。
 
-這個 repo 是**純 JavaScript、無 `package.json`、無建置工具、無自動化測試、無 lint**的扁平結構（8 個 `.js` 檔 + 3 個 `sample.*`）。這是刻意維持的老派風格，不要在沒有明確被要求的情況下引入 TypeScript、bundler、npm 依賴或模組系統——這會偏離這個 fork 的既有慣例。
+## 工具鏈
+
+TypeScript + npm + eslint + rollup（全部繼承自 kurgm）：
+
+```bash
+npm install
+npm run build      # build:lib（tsc → lib/esm + lib/cjs）+ build:dist（rollup → dist/）
+npm test           # node test/index.js
+npm run lint       # eslint 'src/**/*.ts'
+```
+
+`lib/`、`dist/`、`prototype/dist/` 都是建置產物，已被 gitignore。
 
 ### 如何驗證修改
 
-沒有測試可以跑，**驗證方式是視覺檢查**：
+`npm test` **只涵蓋 `Buhin#onMissing`，完全沒有涵蓋筆畫繪製**——測試通過不代表字形沒畫壞。
+改動 `src/font/**` 之後一定要：
 
-```bash
-# SpiderMonkey
-js sample.js > result.svg
-
-# 或 Rhino
-java -jar js.jar sample.js > result.svg
-
-# 或直接在瀏覽器打開 sample.html
-```
-
-`sample.js`/`sample.html` 目前硬編碼渲染 `u6f22`（漢）、`u9ebb`（麻）。修改 `kagecd.js`/`kagedf.js` 裡任何筆畫繪製邏輯後，**一定要重新產生並肉眼比對輸出**（有無缺口、破圖、曲線扭曲），不能只憑程式碼审查判斷正確性。如果修改涉及特定筆畫類型或特定字，最好額外在 `sample.js` 裡加一個包含該筆畫類型的字做驗證，而不是只驗證原有的兩個範例字。
-
-### 檔案載入順序
-
-`2d.js` 和 `curve.js`（提供 `Polygon`/`calculateBezier` 等）必須在 `kagecd.js` 之前載入。若新增檔案或調整 `sample.html`/`sample.js`，維持原本的順序：
-
-```
-2d.js → buhin.js → curve.js → kage.js → kagecd.js → kagedf.js → polygon.js → polygons.js
-```
+1. **視覺檢查**：`node samples/sample.js > result.svg`（需先 `npm run build:lib`），或用瀏覽器開 `samples/sample.html`，肉眼比對有無缺口、破圖、曲線扭曲。範例字硬編碼 `u6f22`（漢）；若改動涉及特定筆畫類型，額外加一個包含該類型的字。
+2. **差分比對**：改動前後各跑一批筆畫資料，逐位元組比對 SVG，只檢查有意改變的部分。這是唯一能有效攔住「重構意外改變輸出」的手段。kurgm 自己用
+   [`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare) 做這件事。
 
 ## 程式碼慣例
 
-- ES3/ES5 風格：`var`、建構子函式 + `Foo.prototype.method = ...`，**不要**改寫成 class 語法或引入 `let`/`const`，除非使用者明確要求現代化。
-- 沒有模組系統（非 ESM 非 CommonJS），全部靠 global scope + 載入順序運作，修改時保持一致。
-- 筆畫類型/頭尾形狀是用十進位數字打包多個旗標（例如 `Math.floor((ta1 % 10000) / 1000)`），改動這類邏輯前務必先理解 `WALKTHROUGH.md` 第 3 節的編碼規則，不要憑猜測改數字。
-- 明朝體專屬的 `adjust*` 系列函式（`kage.js`）**不可**套用在黑體上（`kShotai == kMincho` 時才執行）——這是 PR #7「fix-gothic」修過的坑，之後改動這一塊時要小心不要重蹈覆轍。
-- Commit 訊息延續專案慣例可用日文，簡短、直接引用筆畫類型編號或書法術語（見 `WALKTHROUGH.md` 第 10 節的術語對照表）。
+- **TypeScript**，tab 縮排，`const`/`let`，class 語法。型別用法很淺（`readonly`/`interface`/少量 union），不要為了型別體操把它複雜化。
+- 內部 API 標 `@internal`；公開 API 加 TSDoc（會被 typedoc 收進 `docs/`）。
+- 明朝體與黑體是**各自獨立的類別**（`src/font/mincho/`、`src/font/gothic/`），明朝體專屬的
+  `adjust*` 微調只存在於 `Mincho`。舊版靠 `if (kShotai == kMincho)` 隔離、曾經漏判導致黑體輸出損壞
+  （上游 PR #7「fix-gothic」），新結構從型別層面就避開了——**不要**為了共用而把 adjust\* 上移到共同基底。
+- 筆畫類型/頭尾形狀的十進位旗標打包（`+100`/`+1000`/`+10000`），解包集中在 `Stroke` 建構子
+  （`src/stroke.ts`），繪製端讀 `a2_100`/`a2_opt_1` 這類具名屬性。**不要**在繪製端重新寫
+  `Math.floor((ta1 % 10000) / 1000)`，也不要用改寫類型編號的方式傳遞調整量（改用具名參數）。
+- 座標計算優先透過 `Pen`（`src/pen.ts`）以區域座標表達，不要為「水平/垂直/斜向」各寫一份三角函數——
+  消除這類重複正是 kurgm 這一支的核心價值。
+- Commit 訊息：引擎相關的可延續上游慣例用日文、簡短、直接引用筆畫類型編號或書法術語
+  （見 `doc/WALKTHROUGH.md` 第 10 節的術語對照表）；本 fork 自己的內容用繁體中文。
 
-## 關於其他 fork：選定的開發策略
+## prototype/ 與引擎的介面
 
-這個 repo 是眾多 KAGE engine fork 之一。分析比較如下（2026-07-26 調查，皆為讀取上游/各 fork 實際原始碼後的結論）：
+`prototype/index.html` 以 `<script src="../dist/kage.js">` 載入 rollup 打的 IIFE bundle。
+**該 bundle 只在 global scope 定義 `Kage`**，`Polygons`/`Buhin` 掛在它上面，所以頁面裡有一行
+`var Polygons = Kage.Polygons;`。改動引擎後要重跑 `npm run build:dist` 才會反映到頁面上。
 
-- **`kamichikoichi/kage-engine`** — 官方上游（GlyphWiki 使用），純 JS，無工具鏈。目前這個本地 repo 就是它的完整鏡像。
-- **`kurgm/kage-engine`** — 改寫成 TypeScript，發布為 npm 套件 `@kurgm/kage-engine`，有測試/ESLint/typedoc/CHANGELOG。核心貢獻是把 `kagecd.js`/`kagedf.js` 裡「水平/垂直/斜向」「明朝/黑體/線/曲線/貝茲」的大量重複分支，抽出成共用的 `Pen`（座標旋轉）+ `Stroke`（筆畫資料封裝）+ 統一的 `cdDrawCurveU`，並用專門的輸出比對腳本驗證重構沒有改變行為。TS 用法很淺（只有 `readonly`/`interface`/一個 union type，沒有 generics），去型別化風險低。**刻意不新增任何筆畫類型或風格參數**，維持跟上游輸出一致。
-- **`ge9/kage-engine-2`** — 純 JS，明確聲明「不是一個可獨立使用的函式庫」，服務於作者自己的字型專案 `NazonoMincho`。特點是新增了大量上游/kurgm 都沒有的東西：多段粗細分層（`kMinWidthYY`/`kMinWidthC`/`kMinWidthT_adjust`）、新筆畫類型（如 `CONNECT_THIN`）、以及大量客製化調整啟發式。已經獨立重新發明了類似 kurgm `Pen` 的座標轉換抽象（`pointmaker.js` 的 `PointMaker`），但 `gothic.js`/`mincho.js` 內部繪製邏輯仍保留原本重複的分支風格，沒有做 kurgm 那種去重複重構。
+它用到的引擎介面：`new Kage()`、`kage.kBuhin.push()`、`makeGlyph()`、`makeGlyph3()`、
+`polygons.array[i].array`——以及 `kage.getEachStrokes()`，**後者在 kurgm 的型別上是 `protected`**
+（執行期正常，但不屬於公開 API）。升級引擎時要留意這一個。
 
-**決定：以 `ge9/kage-engine-2` 作為後續開發基礎，把 `kurgm/kage-engine` 的去重複重構（`Pen`/`Stroke`/旋轉矩陣抽象）手動移植進來，保留 ge9 既有的粗細分層與新筆畫類型不動。**
+部署：`sh prototype/build-dist.sh` 組裝 `prototype/dist/`（腳本會先呼叫根目錄的 `npm run build:dist`）。
+Cloudflare Pages 的輸出目錄設定在 `wrangler.toml`。
 
-理由：
-1. ge9 自己的 `PointMaker` 已經是 kurgm `Pen` 的雛形，移植 kurgm 的重構思路不是引入陌生抽象，只是把 ge9 現有的重複分支收斂到已有的抽象上——是一個範圍明確、有 kurgm 實際 commit/diff 可以照抄的內部重構。
-2. 反過來（fork kurgm，把 ge9 的功能移植進去）需要在 kurgm 更嚴格的 TS class 階層（`interface FontInterface`、`class Gothic extends Mincho`）裡**發明**新的粗細分層與筆畫類型概念，而且 ge9 那些 commit 大多沒有文件說明，也沒有「改之前」的版本可以對照 diff，等於要重新設計，而非機械式搬運。
+## 跟進上游
 
-實作上的建議順序：
-1. 先把 ge9 fork 下來當作新的開發基礎，跑一輪 `sample.js`/對應範例確認能重現現有輸出。
-2. 讀 kurgm 的 `src/pen.ts`、`src/stroke.ts`、`src/font/{mincho,gothic}/{index,cd}.ts`，對照 ge9 現有的 `pointmaker.js`、`mincho.js`、`gothic.js`、`stroketype.js`，找出對應關係。
-3. 逐步把 ge9 `gothic.js`/`mincho.js` 裡三份重複的 line/curve/bezier 繪製邏輯，改寫成呼叫統一的 `cdDrawCurveU` 等價函式，中途保留每一步都能用既有範例字驗證輸出沒有跑掉。
-4. ge9 專屬的粗細分層參數（`kMinWidthYY` 等）與新筆畫類型（`CONNECT_THIN` 等）維持原邏輯，只是改成透過新的共用抽象呼叫，不需要改動其語意。
+```bash
+git fetch kurgm && git merge kurgm/master
+```
+
+`kurgm` 持續維護中（2026-06 仍有 commit），且會併回官方上游的修正，所以跟著 `kurgm/master` 就同時跟上了兩邊。
+
+## 關於其他 fork：選型結論（2026-07-29 實測修訂）
+
+> 本節在 2026-07-26 曾有一版相反的結論（「以 `ge9/kage-engine-2` 為基礎」）。
+> 那版是只讀原始碼、沒有實際建置與執行得出的，2026-07-29 實測後推翻。以下為修訂版。
+
+- **`kamichikoichi/kage-engine`** — GlyphWiki 官方上游，24 個 commit，純 JS 無工具鏈。維護節奏極慢（2026 全年 1 個 commit），且外部 PR 幾乎都來自 kurgm。
+- **`kurgm/kage-engine`** — **本 repo 現在的基礎**。354 個 commit，最後一次 2026-06-21；
+  `git rev-list --left-right --count upstream/master...HEAD` = `0 330`，即包含官方上游全部歷史且零落後。
+  發布為 npm 套件 `@kurgm/kage-engine`，有 CI/eslint/typedoc/CHANGELOG。
+- **`ge9/kage-engine-2`** — 純 JS（ESM），為作者自己的字型專案 `NazonoMincho` 服務。
+
+實測依據（都是實際 clone、建置、執行後的結果，不是讀碼推論）：
+
+| | kurgm | ge9 |
+|---|---|---|
+| 最後 commit | 2026-06-21 | **2024-01-06**（停更兩年半） |
+| 相對官方上游 | 落後 0 | **落後 17 個 commit**（缺 2022/2023/2026 的修正） |
+| 建置測試 | `npm install && npm run build && npm test` 一次過 | 無 package.json，Node 無法直接 import（需手動補 `{"type":"module"}`） |
+| 可執行範例 | samples/ 可跑 | **`sample.js` 仍 `load("kagecd.js")`——該檔早已不存在；`sample.html` 已刪除**，沒有可用入口 |
+| 文件 | README + typedoc + CHANGELOG | 無 README |
+| 810 例隨機筆畫資料 | 0 次崩潰 | **11 次崩潰**（如收筆 8「止め」配直線直接 `throw` 裸字串，而該組合是上游合法資料） |
+| 與上游輸出相容性 | `u6f22` 逐位元組相同；810 例中僅 2 例不同，**且該 2 例是上游在 `kagecd.js:217` 崩潰而 kurgm 正常出圖** | 刻意偏離（自有設計與字重） |
+
+**ge9 唯一值得移植的是它的輸出形式與筆法**：它輸出真正的貝茲 `<path>`（上游/kurgm 輸出採樣後的
+`<polygon>` 折線），並用寬度函數（`util.js` 的 `widfun`/`widfun_d`）做變寬描邊、`fit-curve.js` 做曲線擬合，
+另有多段粗細分層參數（`kMinWidthYY`/`kMinWidthC`/`kMinWidthT_adjust`）與新筆畫類型（`CONNECT_THIN` 等）。
+做字型輸出時這是實打實的品質提升。
+
+**但這應當作獨立課題，參考 `fontcanvas.js` + `util.js` 的想法在 kurgm 上重新實作，而不是 fork ge9。**
+兩者皆 GPL-3.0，移植沒有授權問題。
 
 ## 授權
 
-GPL v3（見 `COPYING`）。任何移植/引用其他 fork 的程式碼時，注意授權相容性（`kurgm` fork 同樣是 GPL-3.0，相容）。
+GPL v3（見 `COPYING`）。任何移植/引用其他 fork 的程式碼時注意授權相容性（上述各 fork 皆為 GPL-3.0，相容）。
