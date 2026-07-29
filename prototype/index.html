@@ -3,14 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>拼字法造字工具</title>
-<script src="../2d.js"></script>
-<script src="../buhin.js"></script>
-<script src="../curve.js"></script>
-<script src="../kage.js"></script>
-<script src="../kagecd.js"></script>
-<script src="../kagedf.js"></script>
-<script src="../polygon.js"></script>
-<script src="../polygons.js"></script>
+<!-- 引擎 bundle：由專案根目錄 `npm run build:dist` 產生（dist/ 已被 .gitignore 排除）。
+     bundle 只在 global scope 定義 Kage，Polygons/Buhin 掛在 Kage 上。 -->
+<script src="../dist/kage.js"></script>
+<script>var Polygons = Kage.Polygons;</script>
 <script src="components.js"></script>
 <style>
   :root { color-scheme: light; }
