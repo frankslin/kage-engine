@@ -30,12 +30,25 @@ npm run lint       # eslint 'src/**/*.ts'
 
 ### 如何驗證修改
 
-`npm test` **只涵蓋 `Buhin#onMissing`，完全沒有涵蓋筆畫繪製**——測試通過不代表字形沒畫壞。
-改動 `src/font/**` 之後一定要：
+`npm test` 目前只跑 `test/index.js`：三個手寫字形對照內嵌的多邊形座標，逐點比對
+（容差 0.5）、檢查 on/off-curve 旗標與 NaN。**精確但範圍窄**——實際只觸及 **10 組**
+（筆畫類型／頭形／尾形）組合，全部是明朝體且 `kUseCurve` 關閉，筆畫類型 3／6／7
+從未被畫出，**黑體完全沒有渲染過**。而且它通過時是靜默的，`npm test` 的輸出只看得到
+`Buhin#onMissing: ok`，看不出這部分跑過——不要因此以為筆畫繪製沒有測試。
 
-1. **視覺檢查**：`node samples/sample.js > result.svg`（需先 `npm run build:lib`），或用瀏覽器開 `samples/sample.html`，肉眼比對有無缺口、破圖、曲線扭曲。範例字硬編碼 `u6f22`（漢）；若改動涉及特定筆畫類型，額外加一個包含該類型的字。
-2. **差分比對**：改動前後各跑一批筆畫資料，逐位元組比對 SVG，只檢查有意改變的部分。這是唯一能有效攔住「重構意外改變輸出」的手段。kurgm 自己用
-   [`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare) 做這件事。
+**它只能回答「輸出有沒有變」，不能回答「字形對不對」。** 改動 `src/font/**` 之後仍然要
+**視覺檢查**：`node samples/sample.js > result.svg`（需先 `npm run build:lib`），
+或用瀏覽器開 `samples/sample.html`，肉眼比對有無缺口、破圖、曲線扭曲。範例字硬編碼
+`u6f22`（漢）；若改動涉及特定筆畫類型，額外加一個包含該類型的字。
+
+> **補齊中**：一份 7,614 個 case 的矩陣回歸測試（筆畫類型 × 頭形 × 尾形 × 四種幾何
+> × 明朝/黑體 × `kUseCurve`，比對指紋）已經提到上游：
+> [kurgm/kage-engine#19](https://github.com/kurgm/kage-engine/pull/19)。
+> 若被合併，`git fetch kurgm && git merge kurgm/master` 就會一併帶進來，本 repo
+> 不另外維護一份。在那之前，`src/font/**` 的改動請特別依賴視覺檢查。
+
+kurgm 自己另有一套獨立的跨版本輸出比對腳本
+[`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare)，做的是同一件事。
 
 ## 程式碼慣例
 
