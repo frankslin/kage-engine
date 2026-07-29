@@ -1,8 +1,13 @@
 # KAGE / GlyphWiki 字形資料格式規格
 
 本文件說明 GlyphWiki 用來描述漢字字形的 KAGE 資料格式。內容以本 repo 引擎
-程式碼（`kage.js`、`kagedf.js`、`kagecd.js`）的實際行為為準；形狀碼的慣用
-名稱（開放、接續、ハネ⋯⋯）沿用 GlyphWiki 社群用語，於文中另行標注。
+程式碼（`src/kage.ts`、`src/stroke.ts`、`src/font/*/index.ts`、`src/font/*/cd.ts`）
+的實際行為為準；形狀碼的慣用名稱（開放、接續、ハネ⋯⋯）沿用 GlyphWiki 社群用語，
+於文中另行標注。
+
+> 本文件初版對照的是上游的純 JS 引擎（`kage.js`/`kagedf.js`/`kagecd.js`）。
+> 2026-07-29 引擎改以 `kurgm/kage-engine` 為基礎後，檔案位置已更新如上，
+> **資料格式本身沒有變動**（kurgm 與上游輸出相容）。
 
 ## 1. 概觀
 
@@ -105,7 +110,7 @@ y' = y1 + py × (y2 − y1) / 200
 
 ## 4. 筆畫類型（`a1`，取 `a1 % 100`）
 
-依 `kagedf.js` `dfDrawFont` 的分派（明朝/黑體共通的類型集合）：
+依 `src/font/mincho/index.ts`、`src/font/gothic/index.ts` 的 `dfDrawFont` 分派（明朝/黑體共通的類型集合）：
 
 | `a1` | 慣用名 | 控制點 | 說明 |
 |---|---|---|---|
@@ -155,7 +160,7 @@ a2 = (萬位選項 × 10000) + (千位選項 × 1000) + 基碼 (0–99)
 
 ### 5.2 頭形狀基碼（`a2 % 100`）
 
-依 `kagecd.js` `cdDrawCurveU` 的 `switch(a1 % 100)`（對直線另有補充）：
+依 `src/font/mincho/cd.ts` 的 `cdDrawCurveU` 中 `switch(a1 % 100)`（對直線另有補充）：
 
 | 基碼 | 慣用名 | 說明 |
 |---|---|---|
