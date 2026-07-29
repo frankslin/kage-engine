@@ -31,16 +31,24 @@ CORS 開放）抓取的，本頁不內嵌任何字形資料。
 
 ## 開發與部署
 
-**開發**：直接雙擊開啟 `prototype/index.html`——它以相對路徑引用上層的
-8 個 KAGE 引擎檔（`../2d.js` 等，載入順序不可變，見根目錄
-`WALKTHROUGH.md` 第 2 節），引擎改完重新整理頁面即生效，沒有建置步驟。
+**開發**：先在專案根目錄跑一次
 
-**部署**：跑 `./build-dist.sh` 組裝 `dist/`——引擎檔複製進 `dist/engine/`、
-`index.html` 的引用自動改寫成目錄內路徑（腳本會驗證組裝結果沒有殘留
-`../` 引用）。把 **`dist/` 的內容**整個上傳到任何靜態伺服器
-（GitHub Pages/Cloudflare Pages/nginx）即可。`dist/` 是建置產物，
-已被 `.gitignore` 排除，每次部署前重跑腳本即可，不存在「忘記同步副本」
-的問題。
+```bash
+npm install
+npm run build:dist    # src/*.ts → dist/kage.js
+```
+
+之後直接雙擊開啟 `prototype/index.html` 即可（`file://` 下可運作，已實測）——
+它以 `../dist/kage.js` 引用引擎 bundle（rollup 打的 IIFE，只在 global scope
+定義 `Kage`，故頁面裡有一行 `var Polygons = Kage.Polygons;`）。改動 `src/*.ts`
+後要重跑 `npm run build:dist` 才會反映到頁面上。
+引擎架構見 [`doc/WALKTHROUGH.md`](../doc/WALKTHROUGH.md)。
+
+**部署**：跑 `sh build-dist.sh` 組裝 `dist/`——腳本會先呼叫根目錄的
+`npm run build:dist` 確保 bundle 最新，再把它複製進 `dist/engine/kage.js`、
+把 `index.html` 的引用改寫成目錄內路徑（並驗證沒有殘留 `../` 引用）。
+把 **`dist/` 的內容**整個上傳到任何靜態伺服器（GitHub Pages/Cloudflare
+Pages/nginx）即可。`dist/` 是建置產物，已被 `.gitignore` 排除。
 
 ## 實作要點
 
