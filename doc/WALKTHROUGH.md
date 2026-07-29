@@ -189,7 +189,11 @@ npm test           # test/index.js
 npm run lint       # eslint
 ```
 
-但要注意 `npm test` 目前**只涵蓋 `Buhin#onMissing`，完全沒有涵蓋筆畫繪製**。
+`npm test` 目前只跑 `test/index.js`：三個手寫字形逐點比對內嵌的多邊形座標。
+它的範圍比看起來窄——實際只觸及 10 組筆畫類型／頭形／尾形組合，全為明朝體，
+黑體從未渲染過；而且通過時靜默，`npm test` 的輸出看不出它跑過。
+
+它只能回答「輸出有沒有變」，不能回答「字形對不對」。
 改動 `src/font/**` 之後，`npm test` 通過**不代表**字形沒有畫壞，仍然必須**視覺檢查**：
 
 ```bash
@@ -199,10 +203,12 @@ node samples/sample.js > result.svg     # 需先 npm run build:lib
 
 範例字硬編碼 `u6f22`（漢）。如果修改涉及特定筆畫類型，最好額外加一個包含該筆畫類型的字。
 
-**更強的驗證方式是差分比對**：改動前後各跑一批筆畫資料，逐位元組比對 SVG 輸出，
-只檢查有意改變的部分。kurgm 自己維護了一套
-[`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare) 就是幹這個的；
-本 repo 選型時也是用同樣手法（405 組隨機筆畫資料 × 明朝/黑體）驗證出上游的崩潰案例。
+**更廣的回歸測試已提到上游**：一份 7,614 個 case 的矩陣測試（筆畫類型 × 頭形 × 尾形
+× 四種幾何 × 明朝/黑體 × `kUseCurve`，比對指紋而非座標）見
+[kurgm/kage-engine#19](https://github.com/kurgm/kage-engine/pull/19)。若被合併，
+`git merge kurgm/master` 就會帶進來（見 `AGENTS.md` 的「跟進上游」）。
+kurgm 自己另外維護了一套跨版本的輸出比對腳本
+[`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare)，做的是同一件事。
 
 這也解釋了為什麼上游 commit 訊息常常是「欠け点の発生を改善」（改善缺點問題）、
 「ゴシック体の出力を修正」這類描述視覺缺陷、而非「測試失敗」的用詞。
