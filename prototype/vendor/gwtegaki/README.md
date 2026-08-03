@@ -19,17 +19,18 @@
    `file://` 下 `fetch()` 取不到同目錄的檔案，ESM 版的膠水碼也會被 module 的
    CORS 規則擋掉，所以用 `no-modules` + 內嵌位元組這組合。
 
+## 只用模型，不用它的服務
+
+上游還有一個 Cloud Run 後端（索引 GlyphWiki 全部 36 萬個字形）。本頁**不連它**——
+本地索引 `../../tegaki-index.js` 只收 2,677 個常用部件，暴力全掃約 3.5 ms。
+理由見 `prototype/README.md`「手寫搜尋的本地索引」一節（簡短版：那台是上游作者
+自費的私人服務；36 萬全集的候選品質對拼字工具反而更差）。
+
 ## 版本對版
 
-模型的 `MODEL_VERSION`（目前 `"2"`）必須等於後端索引的 `v`，否則後端回 404。
-確認方式：
-
-```bash
-curl -sX POST https://gwtegaki-backend-nodegcr-pxofktfxwq-uc.a.run.app/warmup
-# {"dumpTime":1773162020000,"numItems":364317,"v":"2"}
-```
-
-升上游版本前先確認後端也換了，不然升完就搜不動。
+模型的 `MODEL_VERSION`（目前 `"2"`）必須等於 `tegaki-index.js` 的 `v`，
+頁面載入索引時會檢查，不符會直接報錯。**動了這個目錄就要重跑
+`sh prototype/build-tegaki-index.sh`**，兩支腳本裡釘的 commit 也要保持一致。
 
 ## 授權
 
