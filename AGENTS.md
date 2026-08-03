@@ -84,6 +84,19 @@ kurgm 自己另有一套獨立的跨版本輸出比對腳本
 部署：`sh prototype/build-dist.sh` 組裝 `prototype/dist/`（腳本會先呼叫根目錄的 `npm run build:dist`）。
 Cloudflare Pages 的輸出目錄設定在 `wrangler.toml`。
 
+### prototype/vendor/gwtegaki/（手寫搜尋，MIT）
+
+頁面的手寫搜尋接的是 [`kurgm/gwtegaki`](https://github.com/kurgm/gwtegaki)（同一位作者）：
+**特徵抽取的 wasm 在本機跑**，只把 394 維向量 POST 到它的 Cloud Run 後端做近似最近鄰，
+後端只回字形名，縮圖照樣由本頁的 kage 引擎畫。
+
+`vendor/gwtegaki/` 裡是**已建置的 wasm**（膠水碼 + base64 內嵌的位元組），**刻意提交進版控**——
+Cloudflare Pages 的建置環境沒有 Rust。要跟上上游或換模型版本才需要
+`sh prototype/build-gwtegaki.sh` 重新產生（需 Rust + wasm-pack，腳本裡釘了 commit）。
+細節與注意事項見 [`prototype/vendor/gwtegaki/README.md`](./prototype/vendor/gwtegaki/README.md)，
+其中最容易踩的是：模型的 `MODEL_VERSION` 必須等於後端索引的 `v`，**對不上後端直接回 404**，
+升版前先確認後端也換了。
+
 ## 跟進上游
 
 ```bash
@@ -128,3 +141,6 @@ git fetch upstream && git merge upstream/master
 ## 授權
 
 GPL v3（見 `COPYING`）。任何移植/引用其他 fork 的程式碼時注意授權相容性（上述各 fork 皆為 GPL-3.0，相容）。
+
+例外：`prototype/vendor/gwtegaki/` 是 MIT（原文附在該目錄的 `LICENSE`，部署時也會一起複製出去）。
+MIT 可併入 GPL-3.0 作品，保留著作權聲明即可。
