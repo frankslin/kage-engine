@@ -7,7 +7,8 @@
 `kage-engine` 是 KAGE 漢字字形生成引擎，把「筆畫資料字串」轉成向量多邊形輪廓（可輸出 SVG/EPS），用來產生明朝體/黑體風格的漢字字形。
 
 **本 repo（`frankslin/kage-engine`）的引擎本體來自 [`kurgm/kage-engine`](https://github.com/kurgm/kage-engine)**
-（GPL-3.0，已設為 remote `kurgm`），它本身是 GlyphWiki 官方上游 `kamichikoichi/kage-engine` 的 fork。
+（GPL-3.0，**已設為 remote `upstream`**），它本身是 GlyphWiki 官方上游 `kamichikoichi/kage-engine` 的 fork。
+官方上游另設為唯讀 remote `kamichikoichi`（push URL 是 `no_push`），只在做版本比對時用得到。
 本 fork 自己的內容是：
 
 - `prototype/` — 拼字法造字工具（瀏覽器端）
@@ -86,10 +87,12 @@ Cloudflare Pages 的輸出目錄設定在 `wrangler.toml`。
 ## 跟進上游
 
 ```bash
-git fetch kurgm && git merge kurgm/master
+git fetch upstream && git merge upstream/master
 ```
 
-`kurgm` 持續維護中（2026-06 仍有 commit），且會併回官方上游的修正，所以跟著 `kurgm/master` 就同時跟上了兩邊。
+`upstream` = `kurgm/kage-engine`。它持續維護中（2026-06 仍有 commit），且會併回官方上游的修正，
+所以跟著它就同時跟上了兩邊——`kamichikoichi/master...upstream/master` 目前是 `0 332`，
+即 kurgm 零落後於官方上游。官方上游本身不需要單獨追（真要比對才 `git fetch kamichikoichi`）。
 
 ## 關於其他 fork：選型結論（2026-07-29 實測修訂）
 
@@ -98,7 +101,7 @@ git fetch kurgm && git merge kurgm/master
 
 - **`kamichikoichi/kage-engine`** — GlyphWiki 官方上游，24 個 commit，純 JS 無工具鏈。維護節奏極慢（2026 全年 1 個 commit），且外部 PR 幾乎都來自 kurgm。
 - **`kurgm/kage-engine`** — **本 repo 現在的基礎**。354 個 commit，最後一次 2026-06-21；
-  `git rev-list --left-right --count upstream/master...HEAD` = `0 330`，即包含官方上游全部歷史且零落後。
+  `git rev-list --left-right --count kamichikoichi/master...upstream/master` = `0 332`，即包含官方上游全部歷史且零落後。
   發布為 npm 套件 `@kurgm/kage-engine`，有 CI/eslint/typedoc/CHANGELOG。
 - **`ge9/kage-engine-2`** — 純 JS（ESM），為作者自己的字型專案 `NazonoMincho` 服務。
 
