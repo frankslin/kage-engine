@@ -1,8 +1,12 @@
 #!/bin/sh
 # 組裝可獨立部署的 prototype/dist/：
-#   - 引擎 bundle（根目錄 npm run build:dist 的產物 dist/kage.js）→ dist/engine/kage.js
-#   - index.html（../dist/kage.js 引用改寫成 engine/kage.js）→ dist/
+#   - 引擎 bundle 的壓縮版（dist/kage.min.js）→ dist/engine/kage.min.js
+#   - index.html（../dist/kage.js 引用改寫成 engine/kage.min.js）→ dist/
 #   - components.js → dist/
+#
+# 開發時頁面引用未壓縮的 ../dist/kage.js（可讀、可下中斷點），部署改用壓縮版：
+# 34 KB vs 124 KB。兩者輸出逐位元組相同（terser 預設不改屬性名，所以
+# Kage.Polygons、getEachStrokes 這些頁面用到的名稱都在）。
 # prototype/dist/ 是建置產物（已被 prototype/.gitignore 排除），每次部署前重跑本腳本即可。
 #
 # 平常開發：先在根目錄跑一次 `npm install && npm run build:dist`，
@@ -19,10 +23,16 @@ cd "$(dirname "$0")"
 rm -rf dist
 mkdir -p dist/engine
 
-cp ../dist/kage.js dist/engine/kage.js
+cp ../dist/kage.min.js dist/engine/kage.min.js
 
-sed 's|<script src="\.\./dist/kage\.js"></script>|<script src="engine/kage.js"></script>|' \
+sed 's|<script src="\.\./dist/kage\.js"></script>|<script src="engine/kage.min.js"></script>|' \
   index.html > dist/index.html
+
+# 驗證：改寫確實發生（sed 沒中就會留下 ../ 引用，下面那關會擋，但錯誤訊息不明確）
+if ! grep -q '<script src="engine/kage\.min\.js"></script>' dist/index.html; then
+  echo "錯誤：index.html 的引擎引用沒有被改寫，請檢查 index.html 裡的 script 標籤" >&2
+  exit 1
+fi
 
 cp components.js dist/
 
