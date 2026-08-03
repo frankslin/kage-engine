@@ -189,11 +189,12 @@ npm test           # test/index.js
 npm run lint       # eslint
 ```
 
-`npm test` 目前只跑 `test/index.js`：三個手寫字形逐點比對內嵌的多邊形座標。
-它的範圍比看起來窄——實際只觸及 10 組筆畫類型／頭形／尾形組合，全為明朝體，
-黑體從未渲染過；而且通過時靜默，`npm test` 的輸出看不出它跑過。
+`npm test` 跑兩個檔：`test/index.js`（三個手寫字形逐點比對內嵌座標，範圍比看起來窄——
+只觸及 10 組筆畫類型／頭形／尾形組合，全為明朝體，黑體從未渲染；而且通過時靜默）
+與 `test/strokes.js`（7,614 個 case 的矩陣回歸測試，涵蓋黑體與 `kUseCurve`，
+比對指紋而非座標；本 fork 提出、已併入上游）。
 
-它只能回答「輸出有沒有變」，不能回答「字形對不對」。
+兩者都只能回答「輸出有沒有變」，不能回答「字形對不對」。
 改動 `src/font/**` 之後，`npm test` 通過**不代表**字形沒有畫壞，仍然必須**視覺檢查**：
 
 ```bash
@@ -203,10 +204,10 @@ node samples/sample.js > result.svg     # 需先 npm run build:lib
 
 範例字硬編碼 `u6f22`（漢）。如果修改涉及特定筆畫類型，最好額外加一個包含該筆畫類型的字。
 
-**更廣的回歸測試已提到上游**：一份 7,614 個 case 的矩陣測試（筆畫類型 × 頭形 × 尾形
-× 四種幾何 × 明朝/黑體 × `kUseCurve`，比對指紋而非座標）見
-[kurgm/kage-engine#19](https://github.com/kurgm/kage-engine/pull/19)。若被合併，
-`git merge kurgm/master` 就會帶進來（見 `AGENTS.md` 的「跟進上游」）。
+**有意改變輸出時**，用 `UPDATE_GOLDEN=1 node test/strokes.js` 重新產生黃金檔，然後
+逐行看 diff——每一行變動都是一個形狀跑掉的筆畫，diff 比預期大就代表改動範圍超出預期。
+`test/strokes.js` 的設計說明寫在檔案開頭的註解裡（為什麼刻意收錄由右往左的幾何、
+為什麼把例外記成黃金值而不是讓測試失敗）。
 kurgm 自己另外維護了一套跨版本的輸出比對腳本
 [`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare)，做的是同一件事。
 

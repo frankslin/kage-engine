@@ -30,22 +30,26 @@ npm run lint       # eslint 'src/**/*.ts'
 
 ### 如何驗證修改
 
-`npm test` 目前只跑 `test/index.js`：三個手寫字形對照內嵌的多邊形座標，逐點比對
-（容差 0.5）、檢查 on/off-curve 旗標與 NaN。**精確但範圍窄**——實際只觸及 **10 組**
-（筆畫類型／頭形／尾形）組合，全部是明朝體且 `kUseCurve` 關閉，筆畫類型 3／6／7
-從未被畫出，**黑體完全沒有渲染過**。而且它通過時是靜默的，`npm test` 的輸出只看得到
-`Buhin#onMissing: ok`，看不出這部分跑過——不要因此以為筆畫繪製沒有測試。
+`npm test` 跑兩個檔（兩者都在上游 kurgm，本 repo 不另外維護）：
 
-**它只能回答「輸出有沒有變」，不能回答「字形對不對」。** 改動 `src/font/**` 之後仍然要
-**視覺檢查**：`node samples/sample.js > result.svg`（需先 `npm run build:lib`），
-或用瀏覽器開 `samples/sample.html`，肉眼比對有無缺口、破圖、曲線扭曲。範例字硬編碼
-`u6f22`（漢）；若改動涉及特定筆畫類型，額外加一個包含該類型的字。
+- **`test/index.js`** — 三個手寫字形對照內嵌的多邊形座標，逐點比對（容差 0.5）、
+  檢查 on/off-curve 旗標與 NaN。精確但範圍窄：只觸及 **10 組**（筆畫類型／頭形／尾形）
+  組合，全為明朝體且 `kUseCurve` 關閉，筆畫類型 3／6／7 從未被畫出，黑體從未渲染。
+  **它通過時是靜默的**，輸出只看得到 `Buhin#onMissing: ok`——別因此以為筆畫繪製沒測試。
+- **`test/strokes.js`** — 7,614 個 case 的矩陣回歸測試：筆畫類型 × 頭形 × 尾形 ×
+  四種幾何（含刻意由右往左、由下往上的方向）× 明朝/黑體 × `kUseCurve`，另加部件展開、
+  伸縮參數、翻轉旋轉的整字案例。比對指紋（多邊形數、頂點數、座標 sha1），
+  黃金檔在 `test/strokes-golden.tsv`。本 fork 提出、已併入上游
+  （[kurgm/kage-engine#19](https://github.com/kurgm/kage-engine/pull/19)）。
 
-> **補齊中**：一份 7,614 個 case 的矩陣回歸測試（筆畫類型 × 頭形 × 尾形 × 四種幾何
-> × 明朝/黑體 × `kUseCurve`，比對指紋）已經提到上游：
-> [kurgm/kage-engine#19](https://github.com/kurgm/kage-engine/pull/19)。
-> 若被合併，`git fetch kurgm && git merge kurgm/master` 就會一併帶進來，本 repo
-> 不另外維護一份。在那之前，`src/font/**` 的改動請特別依賴視覺檢查。
+**兩者都只能回答「輸出有沒有變」，不能回答「字形對不對」。** 改動 `src/font/**` 之後仍然要：
+
+1. **視覺檢查**：`node samples/sample.js > result.svg`（需先 `npm run build:lib`），
+   或用瀏覽器開 `samples/sample.html`，肉眼比對有無缺口、破圖、曲線扭曲。範例字硬編碼
+   `u6f22`（漢）；若改動涉及特定筆畫類型，額外加一個包含該類型的字。
+2. **有意改變輸出時**：`UPDATE_GOLDEN=1 node test/strokes.js` 重新產生黃金檔，然後
+   **逐行看 diff**——每一行變動都是一個形狀跑掉的筆畫，diff 比預期大就代表改動範圍
+   超出預期。不要不看 diff 就直接重新產生。
 
 kurgm 自己另有一套獨立的跨版本輸出比對腳本
 [`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare)，做的是同一件事。
