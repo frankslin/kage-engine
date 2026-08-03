@@ -86,9 +86,16 @@ Cloudflare Pages 的輸出目錄設定在 `wrangler.toml`。
 
 ### prototype/vendor/gwtegaki/（手寫搜尋，MIT）
 
-頁面的手寫搜尋接的是 [`kurgm/gwtegaki`](https://github.com/kurgm/gwtegaki)（同一位作者）：
-**特徵抽取的 wasm 在本機跑**，只把 394 維向量 POST 到它的 Cloud Run 後端做近似最近鄰，
-後端只回字形名，縮圖照樣由本頁的 kage 引擎畫。
+頁面的手寫搜尋用 [`kurgm/gwtegaki`](https://github.com/kurgm/gwtegaki)（同一位作者）的模型，
+但**完全在本機跑，沒有搜尋請求**：特徵抽取的 wasm 在本機，最近鄰在
+`prototype/tegaki-index.js`（2,677 個常用部件 × 394 維，int8，1.4 MB）上暴力全掃（約 3.5 ms）。
+
+原本接的是上游的 Cloud Run 後端（36 萬字形）。改成本地子集不只是去掉依賴與冷啟動，
+**候選還更準**——全集裡大半是 `koseki-`／`tangut-`／IDS 合成字形，會把對的答案擠下去
+（寫「木」在全集拿到的前四名全是 `u6729`）。代價是引用 < 50 次的冷僻字形搜不到。
+索引由 `sh prototype/build-tegaki-index.sh` 產生（需 Rust + GlyphWiki dump），
+它沿用 gwtegaki 的 `kage.rs` 只換 `main`（`prototype/tools/index_subset.rs`）——
+**索引側與查詢側必須是同一個特徵函數**，這是整件事成立的前提。
 
 頁面上「自動拆轉角」是**本 fork 自己加的**（gwtegaki 沒有）：KAGE 把橫折存成兩個筆畫元素
 （`u53e3-j` 是 4 行不是 3 畫），而特徵向量對筆畫數很敏感，照中文習慣寫會落空；但圓轉
@@ -98,9 +105,9 @@ Cloudflare Pages 的輸出目錄設定在 `wrangler.toml`。
 `vendor/gwtegaki/` 裡是**已建置的 wasm**（膠水碼 + base64 內嵌的位元組），**刻意提交進版控**——
 Cloudflare Pages 的建置環境沒有 Rust。要跟上上游或換模型版本才需要
 `sh prototype/build-gwtegaki.sh` 重新產生（需 Rust + wasm-pack，腳本裡釘了 commit）。
-細節與注意事項見 [`prototype/vendor/gwtegaki/README.md`](./prototype/vendor/gwtegaki/README.md)，
-其中最容易踩的是：模型的 `MODEL_VERSION` 必須等於後端索引的 `v`，**對不上後端直接回 404**，
-升版前先確認後端也換了。
+細節與注意事項見 [`prototype/vendor/gwtegaki/README.md`](./prototype/vendor/gwtegaki/README.md)。
+最容易踩的是：模型的 `MODEL_VERSION` 必須等於 `tegaki-index.js` 的 `v`（頁面載入時會檢查），
+**動了 `vendor/gwtegaki/` 就要重跑 `build-tegaki-index.sh`**，兩支腳本裡釘的 commit 也要一致。
 
 ## 跟進上游
 

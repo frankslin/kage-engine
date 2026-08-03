@@ -36,6 +36,10 @@ fi
 
 cp components.js dist/
 
+# 手寫搜尋的本地索引（2,677 個部件的特徵向量，1.4 MB）。
+# 頁面是第一次動筆才用 <script> 標籤抓它，不影響首屏。
+cp tegaki-index.js dist/
+
 # 手寫搜尋模型（kurgm/gwtegaki，MIT）：已建置的 wasm，隨頁面一起部署。
 # 連 LICENSE 一起複製——MIT 要求保留著作權聲明，部署出去的那份也算散布。
 mkdir -p dist/vendor/gwtegaki
