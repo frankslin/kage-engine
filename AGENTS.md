@@ -71,7 +71,8 @@ kurgm 自己另有一套獨立的跨版本輸出比對腳本
 
 ## prototype/ 與引擎的介面
 
-`prototype/index.html` 以 `<script src="../dist/kage.js">` 載入 rollup 打的 IIFE bundle。
+`prototype/index.html` 以 `<script src="../dist/kage.js">` 載入 rollup 打的 IIFE bundle
+（開發用未壓縮版；`build-dist.sh` 部署時會換成 `kage.min.js`，34 KB vs 124 KB）。
 **該 bundle 只在 global scope 定義 `Kage`**，`Polygons`/`Buhin` 掛在它上面，所以頁面裡有一行
 `var Polygons = Kage.Polygons;`。改動引擎後要重跑 `npm run build:dist` 才會反映到頁面上。
 
