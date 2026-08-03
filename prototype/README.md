@@ -45,10 +45,16 @@ npm run build:dist    # src/*.ts → dist/kage.js
 引擎架構見 [`doc/WALKTHROUGH.md`](../doc/WALKTHROUGH.md)。
 
 **部署**：跑 `sh build-dist.sh` 組裝 `dist/`——腳本會先呼叫根目錄的
-`npm run build:dist` 確保 bundle 最新，再把它複製進 `dist/engine/kage.js`、
-把 `index.html` 的引用改寫成目錄內路徑（並驗證沒有殘留 `../` 引用）。
+`npm run build:dist` 確保 bundle 最新，再把**壓縮版**複製進
+`dist/engine/kage.min.js`、把 `index.html` 的引用改寫成目錄內路徑
+（並驗證改寫確實發生、沒有殘留 `../` 引用）。
 把 **`dist/` 的內容**整個上傳到任何靜態伺服器（GitHub Pages/Cloudflare
 Pages/nginx）即可。`dist/` 是建置產物，已被 `.gitignore` 排除。
+
+開發頁引用未壓縮的 `../dist/kage.js`（可讀、可下中斷點），部署則用
+`kage.min.js`：**34 KB vs 124 KB**，也比換引擎前的 8 個檔合計（101 KB）小三分之二。
+兩者輸出逐位元組相同——terser 預設不改屬性名，所以 `Kage.Polygons`、
+`getEachStrokes` 這些頁面用到的名稱都在（已實測 dist 版全流程）。
 
 ## 實作要點
 
