@@ -120,6 +120,8 @@
   #tegakiPad .guide { stroke: rgba(120,120,120,.45); stroke-width: 1; fill: none; }
   #tegakiPad .ink { stroke: #2b2620; stroke-width: 4; fill: none;
     stroke-linecap: round; stroke-linejoin: round; }
+  #tegakiPad .cut { fill: #fff; stroke: #c0392b; stroke-width: 1.5; }
+  .splitopt { font-size: 12px; color: #4d463c; display: flex; align-items: center; gap: 5px; }
   .tegakiside { flex: 1 1 140px; display: flex; flex-direction: column;
     align-items: flex-start; gap: 8px; }
 </style>
@@ -191,6 +193,8 @@
         <div class="tegakiside">
           <button id="tegakiUndo">退一筆</button>
           <button id="tegakiClear">清除</button>
+          <label class="splitopt"><input type="checkbox" id="tegakiSplit" checked>
+            自動拆轉角</label>
           <div class="status" id="tegakiStatus"></div>
         </div>
       </div>
@@ -198,9 +202,11 @@
       <details style="margin-top:8px">
         <summary class="note" style="cursor:pointer">寫法要點（會大幅影響命中率）</summary>
         <p class="note">
-          · <b>筆畫數要跟字形資料一致</b>，這比寫得好看重要得多。轉折要拆開寫：
-          「口」是 <b>4 畫</b>（豎、橫、豎、橫，橫折要拆成兩筆），「氵」是 4 畫。
-          反之「乚」連著寫成 1 畫。<br>
+          · <b>照平常的筆畫寫就好</b>：「口」寫 3 畫、「日」寫 4 畫。KAGE 的資料
+          其實把橫折這種硬折存成兩個筆畫元素（<code>u53e3-j</code> 是 4 行不是 3 行），
+          但「自動拆轉角」會替你補上這一刀——切開的地方會標紅圈。<br>
+          · 豎彎鉤、臥鉤那種<b>圓轉</b>要一筆連著寫（七、匕、心），它們在資料裡本來就是一筆，
+          寫得夠圓就不會被拆。真的拆錯了，把開關關掉自己控制筆數。<br>
           · 寫滿整個框、結構勻稱；直畫盡量直、橫畫盡量平、撇捺走斜的。<br>
           · 收筆的鉤不用寫。<b>筆順不影響結果</b>。<br>
           · 找不到就換個結構比例多試幾次——結果對字的鬆緊很敏感。<br>
@@ -1189,6 +1195,75 @@ function tegakiFeature(strokes){
   return Array.prototype.map.call(arr, Math.fround).join(" ");
 }
 
+// ---- 自動拆轉角：把中文書寫習慣轉成 KAGE 的筆畫切分 ----
+// KAGE 的資料把「橫折／豎折」這種硬折存成兩個筆畫元素（u53e3-j 是 4 行，
+// 不是書法上的 3 畫），但「豎彎鉤／臥鉤」這種圓轉只算一個（七、匕、心都是）。
+// 所以只在夠尖的角切，圓轉靠 RDP 簡化後每個頂點的轉向都不夠大而自然保留。
+// 角度門檻 75° 是實測選的：45〜65° 會把「七」的豎彎鉤切開，反而找不到。
+var TEGAKI_SPLIT = { angle: 75, eps: 3, minLen: 12 };
+
+function tegakiDistToSeg(p, a, b){
+  var dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+  if(!L) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+  var t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+// Ramer–Douglas–Peucker：先簡化掉手抖造成的偽轉角，否則到處都是「角」
+function tegakiSimplify(pts, eps){
+  if(pts.length < 3) return pts;
+  var a = pts[0], b = pts[pts.length - 1], max = 0, idx = 0;
+  for(var i = 1; i < pts.length - 1; i++){
+    var d = tegakiDistToSeg(pts[i], a, b);
+    if(d > max){ max = d; idx = i; }
+  }
+  if(max <= eps) return [a, b];
+  return tegakiSimplify(pts.slice(0, idx + 1), eps).slice(0, -1)
+    .concat(tegakiSimplify(pts.slice(idx), eps));
+}
+
+// 傳回這一筆被切成的數段（沒切到就是原本那一段）
+function tegakiSplitStroke(stroke){
+  if(stroke.length < 3) return [stroke];
+  var s = tegakiSimplify(stroke, TEGAKI_SPLIT.eps), cuts = [];
+  for(var i = 1; i < s.length - 1; i++){
+    var a = s[i - 1], b = s[i], c = s[i + 1];
+    var v1 = [b[0] - a[0], b[1] - a[1]], v2 = [c[0] - b[0], c[1] - b[1]];
+    var l1 = Math.hypot(v1[0], v1[1]), l2 = Math.hypot(v2[0], v2[1]);
+    if(l1 < TEGAKI_SPLIT.minLen || l2 < TEGAKI_SPLIT.minLen) continue;  // 太短的多半是鉤，不是折
+    var cos = Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2)));
+    if(Math.acos(cos) * 180 / Math.PI >= TEGAKI_SPLIT.angle) cuts.push(b);
+  }
+  if(!cuts.length) return [stroke];
+  var out = [], cur = [stroke[0]], ci = 0;
+  for(var j = 1; j < stroke.length; j++){
+    cur.push(stroke[j]);
+    if(ci < cuts.length && stroke[j][0] === cuts[ci][0] && stroke[j][1] === cuts[ci][1]){
+      out.push(cur); cur = [stroke[j]]; ci++;
+    }
+  }
+  out.push(cur);
+  return out.filter(function(seg){ return seg.length > 1; });
+}
+
+// 全部筆畫拆完的結果 + 切點（切點要畫在手寫板上，讓人看見發生了什麼）
+function tegakiSplitAll(){
+  if(!tegakiSplitOn()) return { strokes: tegakiStrokes, cuts: [] };
+  var strokes = [], cuts = [];
+  tegakiStrokes.forEach(function(s){
+    var segs = tegakiSplitStroke(s);
+    segs.forEach(function(seg, i){
+      strokes.push(seg);
+      if(i > 0) cuts.push(seg[0]);
+    });
+  });
+  return { strokes: strokes, cuts: cuts };
+}
+
+function tegakiSplitOn(){
+  return document.getElementById("tegakiSplit").checked;
+}
+
 function renderTegakiPad(){
   var svg = document.getElementById("tegakiPad");
   var svgns = "http://www.w3.org/2000/svg";
@@ -1206,6 +1281,15 @@ function renderTegakiPad(){
     pl.setAttribute("points", s.map(function(p){ return p[0] + "," + p[1]; }).join(" "));
     svg.appendChild(pl);
   });
+  // 切點：讓人看得見「這個折被當成兩筆送出去了」，拆錯時才知道要關掉開關
+  if(!tegakiCurrent){
+    tegakiSplitAll().cuts.forEach(function(p){
+      var c = document.createElementNS(svgns, "circle");
+      c.setAttribute("class", "cut");
+      c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", 4);
+      svg.appendChild(c);
+    });
+  }
 }
 
 function tegakiPoint(e){
@@ -1224,20 +1308,18 @@ function tegakiSearch(){
     return Promise.resolve();
   }
   setStatus("tegakiStatus", "搜尋中⋯");
+  var split = tegakiSplitAll();
+  var splitDiffers = split.strokes.length !== tegakiStrokes.length;
   return tegakiInit().then(function(){
     if(seq !== tegakiSeq) return;
-    return fetch(TEGAKI_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        v: wasm_bindgen.model_version(),
-        query: tegakiFeature(tegakiStrokes)
-      })
-    }).then(function(r){
-      if(!r.ok) return r.text().then(function(t){ throw new Error("HTTP " + r.status + " " + t); });
-      return r.json();
-    }).then(function(res){
+    // 有拆到角時，兩種切分都送、按距離合併：拆錯了原樣的結果仍在榜上。
+    // 沒拆到角就只送一次（別白白多打上游一次請求）。
+    return Promise.all([
+      tegakiQuery(tegakiStrokes),
+      splitDiffers ? tegakiQuery(split.strokes) : Promise.resolve([])
+    ]).then(function(both){
       if(seq !== tegakiSeq) return;   // 期間又畫了一筆，這批結果已過期
+      var res = tegakiMerge(both[0], both[1]);
       var names = res.map(function(x){ return x.name; });
       return Promise.all(names.map(fetchGlyph)).then(function(ds){
         if(seq !== tegakiSeq) return;
@@ -1252,7 +1334,9 @@ function tegakiSearch(){
             if(seq !== tegakiSeq) return;
             lastTegakiFound = found;
             var shown = renderTegakiCands(found);
-            setStatus("tegakiStatus", tegakiStrokes.length + " 畫，" + shown + " 個候選");
+            setStatus("tegakiStatus", tegakiStrokes.length + " 畫" +
+              (splitDiffers ? "（拆成 " + split.strokes.length + " 筆送出）" : "") +
+              "，" + shown + " 個候選");
           });
       });
     });
@@ -1260,6 +1344,30 @@ function tegakiSearch(){
     if(seq !== tegakiSeq) return;
     setStatus("tegakiStatus", "搜尋失敗：" + e.message, true);
   });
+}
+
+function tegakiQuery(strokes){
+  return fetch(TEGAKI_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      v: wasm_bindgen.model_version(),
+      query: tegakiFeature(strokes)
+    })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error("HTTP " + r.status + " " + t); });
+    return r.json();
+  });
+}
+
+// 同名取較近的那個距離，再按距離排序
+function tegakiMerge(a, b){
+  var best = {};
+  a.concat(b).forEach(function(r){
+    if(!(r.name in best) || best[r.name] > r.distance) best[r.name] = r.distance;
+  });
+  return Object.keys(best).map(function(n){ return { name: n, distance: best[n] }; })
+    .sort(function(x, y){ return x.distance - y.distance; });
 }
 
 function renderTegakiCands(found){
@@ -1297,6 +1405,10 @@ function tegakiClear(){
   pad.addEventListener("pointerup", end);
   pad.addEventListener("pointercancel", end);
   document.getElementById("tegakiClear").addEventListener("click", tegakiClear);
+  document.getElementById("tegakiSplit").addEventListener("change", function(){
+    renderTegakiPad();
+    if(tegakiStrokes.length) tegakiSearch();
+  });
   document.getElementById("tegakiUndo").addEventListener("click", function(){
     tegakiStrokes.pop();
     renderTegakiPad();

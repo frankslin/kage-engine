@@ -90,6 +90,11 @@ Cloudflare Pages 的輸出目錄設定在 `wrangler.toml`。
 **特徵抽取的 wasm 在本機跑**，只把 394 維向量 POST 到它的 Cloud Run 後端做近似最近鄰，
 後端只回字形名，縮圖照樣由本頁的 kage 引擎畫。
 
+頁面上「自動拆轉角」是**本 fork 自己加的**（gwtegaki 沒有）：KAGE 把橫折存成兩個筆畫元素
+（`u53e3-j` 是 4 行不是 3 畫），而特徵向量對筆畫數很敏感，照中文習慣寫會落空；但圓轉
+（豎彎鉤、臥鉤）又只算一個元素，所以是**按角度**（≥75°，RDP eps 3）切而不是見角就切。
+改門檻前先看 `prototype/README.md` 的實測數字——45〜65° 會把「七」切壞。
+
 `vendor/gwtegaki/` 裡是**已建置的 wasm**（膠水碼 + base64 內嵌的位元組），**刻意提交進版控**——
 Cloudflare Pages 的建置環境沒有 Rust。要跟上上游或換模型版本才需要
 `sh prototype/build-gwtegaki.sh` 重新產生（需 Rust + wasm-pack，腳本裡釘了 commit）。
