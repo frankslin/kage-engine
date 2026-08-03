@@ -26,7 +26,11 @@ CORS 開放）抓取的，本頁不內嵌任何字形資料。
 7. 所有修改（刪除/插入/替換/拖曳/縮放/滑桿/排序/重設）都會進歷史棧，
    「復原上一步」按鈕或 ⌘Z／Ctrl+Z 可逐步回退（上限 100 步；
    一段連續滑桿或拖曳只記一筆；載入新字會清空歷史）。
-6. 底部輸出框隨時是完整 KAGE 資料，「複製」後可直接貼進 GlyphWiki 的字形編輯框
+7. **不知道部件叫什麼名字時用手寫搜尋**：在「手寫搜尋部件」的方框裡直接寫，
+   每寫完一筆就重搜一次，點縮圖即插入（與上面的搜尋是同一套流程）。
+   搜尋範圍是 GlyphWiki 全部 36 萬個字形，**筆順不影響結果**，但**筆畫數要跟
+   字形資料一致**（「口」要寫 4 畫，橫折得拆成兩筆）——詳見頁面上的「寫法要點」。
+8. 底部輸出框隨時是完整 KAGE 資料，「複製」後可直接貼進 GlyphWiki 的字形編輯框
    （所有部件參照都是 GlyphWiki 上真實存在的部件名）。
 
 ## 開發與部署
@@ -47,7 +51,8 @@ npm run build:dist    # src/*.ts → dist/kage.js
 **部署**：跑 `sh build-dist.sh` 組裝 `dist/`——腳本會先呼叫根目錄的
 `npm run build:dist` 確保 bundle 最新，再把**壓縮版**複製進
 `dist/engine/kage.min.js`、把 `index.html` 的引用改寫成目錄內路徑
-（並驗證改寫確實發生、沒有殘留 `../` 引用）。
+（並驗證改寫確實發生、沒有殘留 `../` 引用），最後複製 `vendor/gwtegaki/`
+（手寫搜尋模型，含其 MIT LICENSE）。
 把 **`dist/` 的內容**整個上傳到任何靜態伺服器（GitHub Pages/Cloudflare
 Pages/nginx）即可。`dist/` 是建置產物，已被 `.gitignore` 排除。
 
@@ -58,6 +63,20 @@ Pages/nginx）即可。`dist/` 是建置產物，已被 `.gitignore` 排除。
 
 ## 實作要點
 
+- **手寫搜尋（gwtegaki）**：模型來自 [`kurgm/gwtegaki`](https://github.com/kurgm/gwtegaki)
+  （MIT，作者與 kage-engine 同一人），見 [`vendor/gwtegaki/README.md`](./vendor/gwtegaki/README.md)。
+  分工是：**特徵抽取（394 維向量）在本機由 WebAssembly 算完**，只有向量會 POST 到
+  gwtegaki 的 Cloud Run 後端做近似最近鄰（HNSW），後端只回字形名，
+  縮圖仍由本頁自己的 kage 引擎畫——所以手寫結果跟「插入部件」共用
+  `renderCandList` / `insertComponent`，連明朝／黑體切換都自動跟著走。
+  幾件實作上會踩到的事：
+  - wasm 用 `--target no-modules` 建置、位元組以 base64 內嵌，才能在 `file://` 下運作。
+  - 初始化走非同步的 `wasm_bindgen()` 而非 `initSync()`：Chrome 禁止主執行緒
+    同步編譯 4 KB 以上的 wasm，這支有 26 KB。
+  - 特徵值要過一次 `Math.fround`（上游前端也是），索引是以 f32 建的。
+  - 每寫完一筆就重搜，用遞增序號擋掉過期回應。
+  - 模型的 `MODEL_VERSION` 必須等於後端索引的 `v`，對不上後端直接回 404。
+  - 後端閒置會休眠，第一次搜尋可能要等 20〜30 秒（上游自己也標記為待改善）。
 - **預覽字體切換（明朝／黑體）**：畫布上方的 serif/sans 開關只換渲染方式，
   輸出的 KAGE 資料完全不變（字形資料與字體風格無關，GlyphWiki 兩種都會渲染），
   所以它**不進 undo 棧**。實作上只有 `newKage()` 一個收口
