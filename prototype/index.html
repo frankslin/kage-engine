@@ -210,12 +210,13 @@
           · 寫滿整個框、結構勻稱；直畫盡量直、橫畫盡量平、撇捺走斜的。<br>
           · 收筆的鉤不用寫。<b>筆順不影響結果</b>。<br>
           · 找不到就換個結構比例多試幾次——結果對字的鬆緊很敏感。<br>
-          · 搜尋範圍是 GlyphWiki 全部 36 萬個字形（不含個人空間、非漢字、hitsujun-）。
+          · 搜尋範圍是本頁的 2,677 個常用部件（GlyphWiki 上被引用 ≥50 次者），
+          不是全部 36 萬個字形——冷僻字形搜不到，但候選都是真能當部件用的東西。
         </p>
       </details>
-      <p class="note">由 <a href="https://github.com/kurgm/gwtegaki" target="_blank">gwtegaki</a>
-        提供（MIT，作者同 kage-engine）：特徵抽取在本機以 WebAssembly 進行，
-        只有特徵向量會送到它的搜尋伺服器。伺服器閒置會休眠，第一次搜尋可能要等 20〜30 秒。</p>
+      <p class="note">模型來自 <a href="https://github.com/kurgm/gwtegaki" target="_blank">gwtegaki</a>
+        （MIT，作者同 kage-engine）。<b>全部在本機跑</b>：特徵抽取用 WebAssembly，
+        最近鄰在內建索引上暴力全掃（約 2 ms），不連任何搜尋伺服器。</p>
     </div>
 
     <div class="panel">
@@ -1159,11 +1160,12 @@ document.getElementById("idsInput").addEventListener("keydown", function(e){
 document.getElementById("delBtn").addEventListener("click", deleteSelected);
 document.getElementById("sortBtn").addEventListener("click", sortRows);
 
-// ---- 手寫搜尋（gwtegaki，MIT，見 vendor/gwtegaki/README.md）----
-// 分工：特徵抽取（394 維向量）在本機由 wasm 算，只有向量會送到 gwtegaki 的
-// 搜尋伺服器做近似最近鄰；伺服器回字形名，縮圖仍由本頁自己的 kage 引擎畫，
-// 所以手寫結果跟上面「插入部件」的候選是同一套顯示與插入流程。
-var TEGAKI_API = "https://gwtegaki-backend-nodegcr-pxofktfxwq-uc.a.run.app/";
+// ---- 手寫搜尋（gwtegaki 的模型，MIT，見 vendor/gwtegaki/README.md）----
+// 全部在本機跑，沒有任何搜尋請求：特徵抽取（394 維）由 wasm 算，最近鄰在
+// tegaki-index.js 那 2,677 個常用部件上暴力全掃（約 2 ms，精確解）。
+// 上游的服務索引 36 萬個字形、要 HNSW 近似搜尋、伺服器閒置會休眠；
+// 但那 36 萬裡大半是 koseki-/tangut-/IDS 合成字形，當部件用不上——
+// 縮到自家的常用部件清單反而更準（實測「木」在全集裡會被 u6729 壓下去）。
 var tegakiStrokes = [];     // [[[x,y],…],…]，座標 0–200，跟 KAGE 同一個字框
 var tegakiCurrent = null;   // 正在畫的那一筆
 var tegakiSeq = 0;          // 併發保護：只有最後一次搜尋的結果會被採用
@@ -1183,16 +1185,69 @@ function tegakiInit(){
   return tegakiWasm;
 }
 
-function tegakiFeature(strokes){
+// 索引是 1.4 MB，不該擋住頁面載入——第一次動筆才抓，之後常駐。
+// 用 <script> 標籤而不是 fetch()：file:// 下 fetch 取不到同目錄的檔案。
+var tegakiIndex = null;     // { names, dim, count, vec: Int8Array, scale: Float32Array }
+var tegakiIndexLoad = null;
+
+function tegakiLoadIndex(){
+  if(tegakiIndexLoad) return tegakiIndexLoad;
+  tegakiIndexLoad = new Promise(function(resolve, reject){
+    if(typeof GWTEGAKI_INDEX !== "undefined") return resolve();
+    var s = document.createElement("script");
+    s.src = "tegaki-index.js";
+    s.onload = function(){ resolve(); };
+    s.onerror = function(){ reject(new Error("載入 tegaki-index.js 失敗")); };
+    document.head.appendChild(s);
+  }).then(function(){
+    if(GWTEGAKI_INDEX.v !== wasm_bindgen.model_version()){
+      throw new Error("索引版本 " + GWTEGAKI_INDEX.v + " 與模型 " +
+        wasm_bindgen.model_version() + " 不符，請重新產生索引");
+    }
+    tegakiIndex = {
+      names: GWTEGAKI_INDEX.names,
+      dim: GWTEGAKI_INDEX.dim,
+      count: GWTEGAKI_INDEX.count,
+      vec: new Int8Array(tegakiUnbase64(GWTEGAKI_INDEX.data).buffer),
+      scale: new Float32Array(tegakiUnbase64(GWTEGAKI_INDEX.scale).buffer)
+    };
+    return tegakiIndex;
+  });
+  return tegakiIndexLoad;
+}
+
+function tegakiUnbase64(s){
+  var bin = atob(s), out = new Uint8Array(bin.length);
+  for(var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// 2,677 × 394 的暴力最近鄰：約 123 萬次乘加，實測 2〜6 ms。
+// 這個規模用 HNSW 之類的近似結構反而更慢，而且拿到的是近似解。
+function tegakiKnn(strokes, k){
+  var idx = tegakiIndex, D = idx.dim, N = idx.count;
+  var q = wasm_bindgen.strokes_flattened_to_feature_array(tegakiFlatten(strokes));
+  var out = [];
+  for(var i = 0; i < N; i++){
+    var sum = 0, o = i * D;
+    for(var j = 0; j < D; j++){
+      var d = idx.vec[o + j] * idx.scale[j] - q[j];
+      sum += d * d;
+    }
+    out.push({ name: idx.names[i], distance: Math.sqrt(sum) });
+  }
+  out.sort(function(a, b){ return a.distance - b.distance; });
+  return out.slice(0, k || 20);
+}
+
+function tegakiFlatten(strokes){
   // 攤平成 [筆數, 點數, x, y, x, y, …, 點數, …] 餵給 wasm
   var flat = [strokes.length];
   strokes.forEach(function(s){
     flat.push(s.length);
     s.forEach(function(p){ flat.push(p[0], p[1]); });
   });
-  var arr = wasm_bindgen.strokes_flattened_to_feature_array(Int32Array.from(flat));
-  // Math.fround：上游前端也這麼做，索引是以 f32 建的，不對齊會有微小偏差
-  return Array.prototype.map.call(arr, Math.fround).join(" ");
+  return Int32Array.from(flat);
 }
 
 // ---- 自動拆轉角：把中文書寫習慣轉成 KAGE 的筆畫切分 ----
@@ -1307,20 +1362,17 @@ function tegakiSearch(){
     lastTegakiFound = null;
     return Promise.resolve();
   }
-  setStatus("tegakiStatus", "搜尋中⋯");
+  setStatus("tegakiStatus", tegakiIndex ? "搜尋中⋯" : "載入索引⋯");
   var split = tegakiSplitAll();
   var splitDiffers = split.strokes.length !== tegakiStrokes.length;
-  return tegakiInit().then(function(){
+  return Promise.all([tegakiInit(), tegakiLoadIndex()]).then(function(){
     if(seq !== tegakiSeq) return;
-    // 有拆到角時，兩種切分都送、按距離合併：拆錯了原樣的結果仍在榜上。
-    // 沒拆到角就只送一次（別白白多打上游一次請求）。
-    return Promise.all([
-      tegakiQuery(tegakiStrokes),
-      splitDiffers ? tegakiQuery(split.strokes) : Promise.resolve([])
-    ]).then(function(both){
-      if(seq !== tegakiSeq) return;   // 期間又畫了一筆，這批結果已過期
-      var res = tegakiMerge(both[0], both[1]);
-      var names = res.map(function(x){ return x.name; });
+    // 兩種切分都搜、按距離合併：拆錯了原樣的結果仍在榜上。
+    // 本機搜尋是 2 ms，多搜一次不必心疼（接遠端時得省著用）。
+    var res = tegakiMerge(tegakiKnn(tegakiStrokes, 20),
+                          splitDiffers ? tegakiKnn(split.strokes, 20) : []);
+    var names = res.map(function(x){ return x.name; });
+    return Promise.resolve().then(function(){
       return Promise.all(names.map(fetchGlyph)).then(function(ds){
         if(seq !== tegakiSeq) return;
         var found = names.filter(function(n, i){ return ds[i] !== ""; });
@@ -1335,7 +1387,7 @@ function tegakiSearch(){
             lastTegakiFound = found;
             var shown = renderTegakiCands(found);
             setStatus("tegakiStatus", tegakiStrokes.length + " 畫" +
-              (splitDiffers ? "（拆成 " + split.strokes.length + " 筆送出）" : "") +
+              (splitDiffers ? "（拆成 " + split.strokes.length + " 筆）" : "") +
               "，" + shown + " 個候選");
           });
       });
@@ -1343,20 +1395,6 @@ function tegakiSearch(){
   }).catch(function(e){
     if(seq !== tegakiSeq) return;
     setStatus("tegakiStatus", "搜尋失敗：" + e.message, true);
-  });
-}
-
-function tegakiQuery(strokes){
-  return fetch(TEGAKI_API, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      v: wasm_bindgen.model_version(),
-      query: tegakiFeature(strokes)
-    })
-  }).then(function(r){
-    if(!r.ok) return r.text().then(function(t){ throw new Error("HTTP " + r.status + " " + t); });
-    return r.json();
   });
 }
 
