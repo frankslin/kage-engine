@@ -8,6 +8,9 @@
 <script src="../dist/kage.js"></script>
 <script>var Polygons = Kage.Polygons;</script>
 <script src="components.js"></script>
+<!-- 手寫搜尋模型（kurgm/gwtegaki，MIT）：膠水碼 + base64 內嵌的 wasm，見 vendor/gwtegaki/README.md -->
+<script src="vendor/gwtegaki/gwtegaki_model.js"></script>
+<script src="vendor/gwtegaki/gwtegaki_model_wasm.js"></script>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -108,6 +111,17 @@
   .seg button.on { background: #2b2620; color: #fff; }
   .seg button.on:hover { background: #2b2620; }
   #copyBtn.done { border-color: #2e7d32; color: #2e7d32; }
+  /* 手寫搜尋 */
+  .tegakirow { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  #tegakiPad {
+    flex: 0 0 auto; width: 200px; height: 200px; background: #fffdf8;
+    border: 1px solid #e4ddd0; border-radius: 6px; touch-action: none; cursor: crosshair;
+  }
+  #tegakiPad .guide { stroke: rgba(120,120,120,.45); stroke-width: 1; fill: none; }
+  #tegakiPad .ink { stroke: #2b2620; stroke-width: 4; fill: none;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .tegakiside { flex: 1 1 140px; display: flex; flex-direction: column;
+    align-items: flex-start; gap: 8px; }
 </style>
 </head>
 <body>
@@ -168,6 +182,34 @@
         <div class="boxgrid" id="boxInputs"></div>
         <p class="note" style="margin-top:8px">畫布上拖曳外框/把手也可調整</p>
       </div>
+    </div>
+
+    <div class="panel">
+      <h2>手寫搜尋部件</h2>
+      <div class="tegakirow">
+        <svg id="tegakiPad" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="tegakiside">
+          <button id="tegakiUndo">退一筆</button>
+          <button id="tegakiClear">清除</button>
+          <div class="status" id="tegakiStatus"></div>
+        </div>
+      </div>
+      <div class="candidates" id="tegakiCands" style="max-height:300px;overflow:auto"></div>
+      <details style="margin-top:8px">
+        <summary class="note" style="cursor:pointer">寫法要點（會大幅影響命中率）</summary>
+        <p class="note">
+          · <b>筆畫數要跟字形資料一致</b>，這比寫得好看重要得多。轉折要拆開寫：
+          「口」是 <b>4 畫</b>（豎、橫、豎、橫，橫折要拆成兩筆），「氵」是 4 畫。
+          反之「乚」連著寫成 1 畫。<br>
+          · 寫滿整個框、結構勻稱；直畫盡量直、橫畫盡量平、撇捺走斜的。<br>
+          · 收筆的鉤不用寫。<b>筆順不影響結果</b>。<br>
+          · 找不到就換個結構比例多試幾次——結果對字的鬆緊很敏感。<br>
+          · 搜尋範圍是 GlyphWiki 全部 36 萬個字形（不含個人空間、非漢字、hitsujun-）。
+        </p>
+      </details>
+      <p class="note">由 <a href="https://github.com/kurgm/gwtegaki" target="_blank">gwtegaki</a>
+        提供（MIT，作者同 kage-engine）：特徵抽取在本機以 WebAssembly 進行，
+        只有特徵向量會送到它的搜尋伺服器。伺服器閒置會休眠，第一次搜尋可能要等 20〜30 秒。</p>
     </div>
 
     <div class="panel">
@@ -1111,6 +1153,158 @@ document.getElementById("idsInput").addEventListener("keydown", function(e){
 document.getElementById("delBtn").addEventListener("click", deleteSelected);
 document.getElementById("sortBtn").addEventListener("click", sortRows);
 
+// ---- 手寫搜尋（gwtegaki，MIT，見 vendor/gwtegaki/README.md）----
+// 分工：特徵抽取（394 維向量）在本機由 wasm 算，只有向量會送到 gwtegaki 的
+// 搜尋伺服器做近似最近鄰；伺服器回字形名，縮圖仍由本頁自己的 kage 引擎畫，
+// 所以手寫結果跟上面「插入部件」的候選是同一套顯示與插入流程。
+var TEGAKI_API = "https://gwtegaki-backend-nodegcr-pxofktfxwq-uc.a.run.app/";
+var tegakiStrokes = [];     // [[[x,y],…],…]，座標 0–200，跟 KAGE 同一個字框
+var tegakiCurrent = null;   // 正在畫的那一筆
+var tegakiSeq = 0;          // 併發保護：只有最後一次搜尋的結果會被採用
+var lastTegakiFound = null; // 供切換預覽字體時重畫縮圖
+var tegakiWasm = null;      // wasm 初始化的 promise（全程只做一次）
+
+function tegakiInit(){
+  if(tegakiWasm) return tegakiWasm;
+  // 用非同步的 wasm_bindgen()（WebAssembly.instantiate）而不是 initSync：
+  // Chrome 禁止主執行緒同步編譯 4 KB 以上的 wasm，這支有 26 KB。
+  tegakiWasm = Promise.resolve().then(function(){
+    var bin = atob(GWTEGAKI_WASM_BASE64);
+    var bytes = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return wasm_bindgen({ module_or_path: bytes });
+  });
+  return tegakiWasm;
+}
+
+function tegakiFeature(strokes){
+  // 攤平成 [筆數, 點數, x, y, x, y, …, 點數, …] 餵給 wasm
+  var flat = [strokes.length];
+  strokes.forEach(function(s){
+    flat.push(s.length);
+    s.forEach(function(p){ flat.push(p[0], p[1]); });
+  });
+  var arr = wasm_bindgen.strokes_flattened_to_feature_array(Int32Array.from(flat));
+  // Math.fround：上游前端也這麼做，索引是以 f32 建的，不對齊會有微小偏差
+  return Array.prototype.map.call(arr, Math.fround).join(" ");
+}
+
+function renderTegakiPad(){
+  var svg = document.getElementById("tegakiPad");
+  var svgns = "http://www.w3.org/2000/svg";
+  svg.innerHTML = "";
+  // 中心十字與四角，跟 gwtegaki 一樣，提示「寫滿整個框、置中」
+  var guide = document.createElementNS(svgns, "path");
+  guide.setAttribute("class", "guide");
+  guide.setAttribute("d", "M 90 100 H 110 M 100 90 V 110 M 12 22 V 12 H 22 " +
+                          "M 178 12 H 188 V 22 M 188 178 V 188 H 178 M 22 188 H 12 V 178");
+  svg.appendChild(guide);
+  var all = tegakiCurrent ? tegakiStrokes.concat([tegakiCurrent]) : tegakiStrokes;
+  all.forEach(function(s){
+    var pl = document.createElementNS(svgns, "polyline");
+    pl.setAttribute("class", "ink");
+    pl.setAttribute("points", s.map(function(p){ return p[0] + "," + p[1]; }).join(" "));
+    svg.appendChild(pl);
+  });
+}
+
+function tegakiPoint(e){
+  var r = document.getElementById("tegakiPad").getBoundingClientRect();
+  return [Math.round((e.clientX - r.left) / r.width * 200),
+          Math.round((e.clientY - r.top) / r.height * 200)];
+}
+
+function tegakiSearch(){
+  var seq = ++tegakiSeq;
+  var wrap = document.getElementById("tegakiCands");
+  if(tegakiStrokes.length === 0){
+    setStatus("tegakiStatus", "");
+    wrap.innerHTML = "";
+    lastTegakiFound = null;
+    return Promise.resolve();
+  }
+  setStatus("tegakiStatus", "搜尋中⋯");
+  return tegakiInit().then(function(){
+    if(seq !== tegakiSeq) return;
+    return fetch(TEGAKI_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        v: wasm_bindgen.model_version(),
+        query: tegakiFeature(tegakiStrokes)
+      })
+    }).then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error("HTTP " + r.status + " " + t); });
+      return r.json();
+    }).then(function(res){
+      if(seq !== tegakiSeq) return;   // 期間又畫了一筆，這批結果已過期
+      var names = res.map(function(x){ return x.name; });
+      return Promise.all(names.map(fetchGlyph)).then(function(ds){
+        if(seq !== tegakiSeq) return;
+        var found = names.filter(function(n, i){ return ds[i] !== ""; });
+        if(found.length === 0){
+          setStatus("tegakiStatus", "查無結果", true);
+          wrap.innerHTML = "";
+          return;
+        }
+        return Promise.all(found.map(function(n){ return ensureBuhin(glyphCache[n]); }))
+          .then(function(){
+            if(seq !== tegakiSeq) return;
+            lastTegakiFound = found;
+            var shown = renderTegakiCands(found);
+            setStatus("tegakiStatus", tegakiStrokes.length + " 畫，" + shown + " 個候選");
+          });
+      });
+    });
+  }).catch(function(e){
+    if(seq !== tegakiSeq) return;
+    setStatus("tegakiStatus", "搜尋失敗：" + e.message, true);
+  });
+}
+
+function renderTegakiCands(found){
+  return renderCandList(found, document.getElementById("tegakiCands"), insertComponent);
+}
+
+function tegakiClear(){
+  tegakiStrokes = [];
+  tegakiCurrent = null;
+  renderTegakiPad();
+  tegakiSearch();
+}
+
+(function wireTegakiPad(){
+  var pad = document.getElementById("tegakiPad");
+  pad.addEventListener("pointerdown", function(e){
+    e.preventDefault();
+    pad.setPointerCapture(e.pointerId);
+    tegakiCurrent = [tegakiPoint(e)];
+    renderTegakiPad();
+  });
+  pad.addEventListener("pointermove", function(e){
+    if(!tegakiCurrent) return;
+    tegakiCurrent.push(tegakiPoint(e));
+    renderTegakiPad();
+  });
+  function end(){
+    if(!tegakiCurrent) return;
+    // 只點一下不算一筆（避免誤觸就送出一次搜尋）
+    if(tegakiCurrent.length > 1) tegakiStrokes.push(tegakiCurrent);
+    tegakiCurrent = null;
+    renderTegakiPad();
+    if(tegakiStrokes.length) tegakiSearch();
+  }
+  pad.addEventListener("pointerup", end);
+  pad.addEventListener("pointercancel", end);
+  document.getElementById("tegakiClear").addEventListener("click", tegakiClear);
+  document.getElementById("tegakiUndo").addEventListener("click", function(){
+    tegakiStrokes.pop();
+    renderTegakiPad();
+    tegakiSearch();
+  });
+  renderTegakiPad();
+})();
+
 // ---- 預覽字體切換（明朝／黑體）----
 // 只換渲染方式，不動 state.rows，所以不進 undo 棧。
 // render() 會連帶重畫組成列與替換候選縮圖（都走 newKage()）；搜尋結果的縮圖
@@ -1124,6 +1318,7 @@ function setShotai(shotai){
   if(lastSearchFound){
     renderCandList(lastSearchFound, document.getElementById("candidates"), insertComponent);
   }
+  if(lastTegakiFound) renderTegakiCands(lastTegakiFound);
 }
 document.getElementById("shotaiMincho").addEventListener("click", function(){ setShotai(0); });
 document.getElementById("shotaiGothic").addEventListener("click", function(){ setShotai(1); });

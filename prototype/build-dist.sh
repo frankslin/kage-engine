@@ -36,6 +36,12 @@ fi
 
 cp components.js dist/
 
+# 手寫搜尋模型（kurgm/gwtegaki，MIT）：已建置的 wasm，隨頁面一起部署。
+# 連 LICENSE 一起複製——MIT 要求保留著作權聲明，部署出去的那份也算散布。
+mkdir -p dist/vendor/gwtegaki
+cp vendor/gwtegaki/gwtegaki_model.js vendor/gwtegaki/gwtegaki_model_wasm.js \
+   vendor/gwtegaki/LICENSE dist/vendor/gwtegaki/
+
 # 驗證：dist/index.html 不得再有目錄外引用
 if grep -q '\.\./' dist/index.html; then
   echo "錯誤：dist/index.html 仍有 ../ 引用" >&2
