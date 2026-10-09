@@ -54,7 +54,7 @@ kage-engine/
 │           ├── index.ts  Gothic 類別 + dfDrawFont 分派
 │           └── cd.ts     黑體的筆畫外框繪製器
 ├── samples/              範例（sample.js 輸出 SVG、sample.html 瀏覽器版）
-├── test/index.js         測試（`npm test`）
+├── test/                 測試（`npm test` = `node --test`，sample/strokes/buhin/polygons.ts）
 ├── docs/                 typedoc 產生的 API 文件
 ├── prototype/            本 fork 的拼字法造字工具（見 prototype/README.md）
 ├── doc/                  本 fork 的中文文件
@@ -185,16 +185,16 @@ console.log(polygons.generateSVG(false));
 ```bash
 npm install
 npm run build      # build:lib（tsc → lib/esm + lib/cjs）+ build:dist（rollup → dist/）
-npm test           # test/index.js
+npm test           # node --test（test/*.ts，Node ≥ 22）
 npm run lint       # eslint
 ```
 
-`npm test` 跑兩個檔：`test/index.js`（三個手寫字形逐點比對內嵌座標，範圍比看起來窄——
-只觸及 10 組筆畫類型／頭形／尾形組合，全為明朝體，黑體從未渲染；而且通過時靜默）
-與 `test/strokes.js`（7,614 個 case 的矩陣回歸測試，涵蓋黑體與 `kUseCurve`，
-比對指紋而非座標；本 fork 提出、已併入上游）。
+`npm test` 跑的主要是兩個檔：`test/sample.ts`（三個手寫字形逐點比對內嵌座標，範圍比看起來窄——
+只觸及 10 組筆畫類型／頭形／尾形組合，全為明朝體，黑體從未渲染）
+與 `test/strokes.ts`（7,614 個 case 的矩陣回歸測試，涵蓋黑體與 `kUseCurve`，
+比對指紋而非座標；本 fork 提出、已併入上游）。另有 `buhin.ts`、`polygons.ts` 兩個單元測試。
 
-兩者都只能回答「輸出有沒有變」，不能回答「字形對不對」。
+這些都只能回答「輸出有沒有變」，不能回答「字形對不對」。
 改動 `src/font/**` 之後，`npm test` 通過**不代表**字形沒有畫壞，仍然必須**視覺檢查**：
 
 ```bash
@@ -204,9 +204,9 @@ node samples/sample.js > result.svg     # 需先 npm run build:lib
 
 範例字硬編碼 `u6f22`（漢）。如果修改涉及特定筆畫類型，最好額外加一個包含該筆畫類型的字。
 
-**有意改變輸出時**，用 `UPDATE_GOLDEN=1 node test/strokes.js` 重新產生黃金檔，然後
+**有意改變輸出時**，用 `node --test --test-update-snapshots test/strokes.ts` 重新產生黃金檔，然後
 逐行看 diff——每一行變動都是一個形狀跑掉的筆畫，diff 比預期大就代表改動範圍超出預期。
-`test/strokes.js` 的設計說明寫在檔案開頭的註解裡（為什麼刻意收錄由右往左的幾何、
+`test/strokes.ts` 的設計說明寫在檔案開頭的註解裡（為什麼刻意收錄由右往左的幾何、
 為什麼把例外記成黃金值而不是讓測試失敗）。
 kurgm 自己另外維護了一套跨版本的輸出比對腳本
 [`kage-engine-compare`](https://github.com/kurgm/kage-engine-compare)，做的是同一件事。

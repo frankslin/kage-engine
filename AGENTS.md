@@ -23,32 +23,34 @@ TypeScript + npm + eslint + rollup（全部繼承自 kurgm）：
 ```bash
 npm install
 npm run build      # build:lib（tsc → lib/esm + lib/cjs）+ build:dist（rollup → dist/）
-npm test           # node test/index.js
-npm run lint       # eslint 'src/**/*.ts'
+npm test           # node --test（跑 test/*.ts，Node ≥ 22）
+npm run lint       # eslint 'src/**/*.ts' 'test/**/*.ts'
+npm run typecheck  # tsc --build --noEmit
 ```
 
 `lib/`、`dist/`、`prototype/dist/` 都是建置產物，已被 gitignore。
 
 ### 如何驗證修改
 
-`npm test` 跑兩個檔（兩者都在上游 kurgm，本 repo 不另外維護）：
+`npm test` 是 `node --test`，跑 `test/` 下的 TypeScript 測試（Node 直接剝型別執行，
+不經 tsc；全部在上游 kurgm，本 repo 不另外維護）：
 
-- **`test/index.js`** — 三個手寫字形對照內嵌的多邊形座標，逐點比對（容差 0.5）、
+- **`test/sample.ts`** — 三個手寫字形對照內嵌的多邊形座標，逐點比對（容差 0.5）、
   檢查 on/off-curve 旗標與 NaN。精確但範圍窄：只觸及 **10 組**（筆畫類型／頭形／尾形）
   組合，全為明朝體且 `kUseCurve` 關閉，筆畫類型 3／6／7 從未被畫出，黑體從未渲染。
-  **它通過時是靜默的**，輸出只看得到 `Buhin#onMissing: ok`——別因此以為筆畫繪製沒測試。
-- **`test/strokes.js`** — 7,614 個 case 的矩陣回歸測試：筆畫類型 × 頭形 × 尾形 ×
+- **`test/strokes.ts`** — 7,614 個 case 的矩陣回歸測試：筆畫類型 × 頭形 × 尾形 ×
   四種幾何（含刻意由右往左、由下往上的方向）× 明朝/黑體 × `kUseCurve`，另加部件展開、
   伸縮參數、翻轉旋轉的整字案例。比對指紋（多邊形數、頂點數、座標 sha1），
   黃金檔在 `test/strokes-golden.tsv`。本 fork 提出、已併入上游
   （[kurgm/kage-engine#19](https://github.com/kurgm/kage-engine/pull/19)）。
+- `test/buhin.ts`、`test/polygons.ts` — `Buhin#onMissing` 與 `Polygons#normalizeWinding` 的單元測試。
 
-**兩者都只能回答「輸出有沒有變」，不能回答「字形對不對」。** 改動 `src/font/**` 之後仍然要：
+**這些都只能回答「輸出有沒有變」，不能回答「字形對不對」。** 改動 `src/font/**` 之後仍然要：
 
 1. **視覺檢查**：`node samples/sample.js > result.svg`（需先 `npm run build:lib`），
    或用瀏覽器開 `samples/sample.html`，肉眼比對有無缺口、破圖、曲線扭曲。範例字硬編碼
    `u6f22`（漢）；若改動涉及特定筆畫類型，額外加一個包含該類型的字。
-2. **有意改變輸出時**：`UPDATE_GOLDEN=1 node test/strokes.js` 重新產生黃金檔，然後
+2. **有意改變輸出時**：`node --test --test-update-snapshots test/strokes.ts` 重新產生黃金檔，然後
    **逐行看 diff**——每一行變動都是一個形狀跑掉的筆畫，diff 比預期大就代表改動範圍
    超出預期。不要不看 diff 就直接重新產生。
 
@@ -115,8 +117,8 @@ Cloudflare Pages 的建置環境沒有 Rust。要跟上上游或換模型版本�
 git fetch upstream && git merge upstream/master
 ```
 
-`upstream` = `kurgm/kage-engine`。它持續維護中（2026-06 仍有 commit），且會併回官方上游的修正，
-所以跟著它就同時跟上了兩邊——`kamichikoichi/master...upstream/master` 目前是 `0 332`，
+`upstream` = `kurgm/kage-engine`。它持續維護中（2026-09 仍有 commit，最新發布 0.7.0），且會併回官方上游的修正，
+所以跟著它就同時跟上了兩邊——`kamichikoichi/master...upstream/master` 目前是 `0 360`，
 即 kurgm 零落後於官方上游。官方上游本身不需要單獨追（真要比對才 `git fetch kamichikoichi`）。
 
 ## 關於其他 fork：選型結論（2026-07-29 實測修訂）
@@ -125,8 +127,8 @@ git fetch upstream && git merge upstream/master
 > 那版是只讀原始碼、沒有實際建置與執行得出的，2026-07-29 實測後推翻。以下為修訂版。
 
 - **`kamichikoichi/kage-engine`** — GlyphWiki 官方上游，24 個 commit，純 JS 無工具鏈。維護節奏極慢（2026 全年 1 個 commit），且外部 PR 幾乎都來自 kurgm。
-- **`kurgm/kage-engine`** — **本 repo 現在的基礎**。354 個 commit，最後一次 2026-06-21；
-  `git rev-list --left-right --count kamichikoichi/master...upstream/master` = `0 332`，即包含官方上游全部歷史且零落後。
+- **`kurgm/kage-engine`** — **本 repo 現在的基礎**。384 個 commit，最後一次 2026-09-06；
+  `git rev-list --left-right --count kamichikoichi/master...upstream/master` = `0 360`，即包含官方上游全部歷史且零落後。
   發布為 npm 套件 `@kurgm/kage-engine`，有 CI/eslint/typedoc/CHANGELOG。
 - **`ge9/kage-engine-2`** — 純 JS（ESM），為作者自己的字型專案 `NazonoMincho` 服務。
 
@@ -134,7 +136,7 @@ git fetch upstream && git merge upstream/master
 
 | | kurgm | ge9 |
 |---|---|---|
-| 最後 commit | 2026-06-21 | **2024-01-06**（停更兩年半） |
+| 最後 commit | 2026-06-21（實測當時） | **2024-01-06**（停更兩年半） |
 | 相對官方上游 | 落後 0 | **落後 17 個 commit**（缺 2022/2023/2026 的修正） |
 | 建置測試 | `npm install && npm run build && npm test` 一次過 | 無 package.json，Node 無法直接 import（需手動補 `{"type":"module"}`） |
 | 可執行範例 | samples/ 可跑 | **`sample.js` 仍 `load("kagecd.js")`——該檔早已不存在；`sample.html` 已刪除**，沒有可用入口 |
