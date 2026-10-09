@@ -10,6 +10,16 @@ This repository contains the KAGE engine modified by @kurgm (a.k.a. [User:twe](h
 
 [デモページ Demo page](https://kurgm.github.io/kage-engine/)
 
+## 關於本 fork（frankslin/kage-engine）
+
+本 repo 是 [`kurgm/kage-engine`](https://github.com/kurgm/kage-engine) 的 fork。引擎本體不做改動，
+額外內容為：
+
+- [`prototype/`](./prototype/) — 拼字法造字工具（瀏覽器端，直接讀 GlyphWiki API，輸出可貼回 GlyphWiki 的 KAGE 資料）
+- [`doc/`](./doc/) — 繁體中文的 KAGE 資料格式規格與引擎導覽
+
+引擎的上游關係為 `kamichikoichi/kage-engine`（GlyphWiki 官方）→ `kurgm/kage-engine` → 本 repo。
+
 ## Usage
 
 ### Installation
